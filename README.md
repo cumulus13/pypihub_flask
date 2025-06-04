@@ -2,6 +2,8 @@
 
 PyPihub is a simple local PyPI server with caching and package upload capabilities. This server allows you to host your Python packages locally, cache packages from the official PyPI, and supports package uploads via `twine`.
 
+This version uses Flask. If you install via pip, use: `pip install pypihub[flask]`
+
 ## Key Features
 
 - **Local Package Hosting**: Host your own Python packages locally
@@ -25,7 +27,7 @@ git clone <repository-url>
 cd pypihub
 ```
 
-or you can install with pip:
+Or you can install with pip:
 ```bash
 $ pip install pypihub[flask]
 ```
@@ -34,7 +36,7 @@ $ pip install pypihub[flask]
 
 ### 1. Configuration File (pypihub.ini)
 
-Create a `pypihub.ini` as an alternative config file or it will be created automatically in the same directory as `pypihub.py`:
+Create a `pypihub.ini` as an alternative config file, or it will be created automatically in the same directory as `pypihub.py`:
 
 ```ini
 [dirs]
@@ -275,14 +277,15 @@ For commercial licensing options, please contact: [cumulus13@gmail.com](mailto:c
 
 ## Support
 
-For issues and questions, please create/open an issue in the repository or contact cumulus13@gmail.com.
+For issues and questions, please create/open an issue in the repository or contact [cumulus13@gmail.com](mailto:cumulus13@gmail.com).
 
 ---
 
 **PyPihub** - Simplifying local Python package management
+
 `Warning: Do not expose this server to the public internet without proper authentication and security measures.`
 
-## author
+## Author
 [Hadi Cahyadi](mailto:cumulus13@gmail.com)
     
 [![Buy Me a Coffee](https://www.buymeacoffee.com/assets/img/custom_images/orange_img.png)](https://www.buymeacoffee.com/cumulus13)
