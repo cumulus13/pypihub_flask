@@ -37,12 +37,13 @@ logger.setLevel(Logger.EMERGENCY_LEVEL)
 # logger = logging.getLogger(__name__)
 
 import requests
-from flask import Flask, send_from_directory, request, render_template_string, abort, Response, jsonify
+from flask import Flask, send_from_directory, request, render_template_string, abort, Response, jsonify, session, redirect, url_for
 from bs4 import BeautifulSoup
 from pydebugger.debug import debug
 from configset import configset
 from pathlib import Path
 from functools import wraps
+from getpass import getpass
 
 if (Path(__file__).parent / 'settings.py').is_file():
     try:
@@ -51,6 +52,14 @@ if (Path(__file__).parent / 'settings.py').is_file():
         import settings as local_settings
 else:
     local_settings = None
+
+if (Path(__file__).parent / 'database.py').is_file():
+    try:
+        from . import database
+    except:
+        import database
+else:
+    database = None
 
 from rich.console import Console
 from rich_argparse import RichHelpFormatter, _lazy_rich as rr
@@ -87,6 +96,7 @@ class settings:
 settings = settings()
 
 app = Flask(__name__)
+
 CONFIGFILE = os.getenv('CONFIGFILE') if os.getenv('CONFIGFILE') else settings.CONFIGFILE if Path(settings.CONFIGFILE).is_file() else str(Path(__file__).parent / Path(__file__).stem) + '.ini'
 debug(CONFIGFILE = CONFIGFILE)
 logger.info(f"CONFIGFILE: {CONFIGFILE}")
@@ -121,6 +131,109 @@ print("\n")
 os.makedirs(LOCAL_PKG_DIR, exist_ok=True)
 os.makedirs(CACHE_DIR, exist_ok=True)
 
+if database:
+    from sqlalchemy import create_engine
+    from sqlalchemy.orm import sessionmaker
+    from sqlalchemy.exc import SQLAlchemyError
+    
+    User = database.User
+    Package = database.Package
+
+    def get_db_url():
+        # Take config from Settings.co, Settings.ini, App.config, or ENV
+        db_type = (
+            getattr(settings, 'DB_TYPE', None)
+            or CONFIG.get_config('database', 'type')
+            or app.config.get('DB_TYPE')
+            or os.getenv('DB_TYPE')
+            or 'sqlite'
+        ).lower()
+
+        db_path = (
+            getattr(settings, 'DB_PATH', None)
+            or CONFIG.get_config('database', 'path')
+            or app.config.get('DB_PATH')
+            or os.getenv('DB_PATH')
+            or f"{BASE_DIR}/pypihub.db"
+        )
+
+        db_name = (
+            getattr(settings, 'DB_NAME', None)
+            or CONFIG.get_config('database', 'name')
+            or app.config.get('DB_NAME')
+            or os.getenv('DB_NAME')
+            or 'pypihub'
+        )
+
+        db_user = (
+            getattr(settings, 'DB_USERNAME', None)
+            or CONFIG.get_config('database', 'username')
+            or app.config.get('DB_USERNAME')
+            or os.getenv('DB_USERNAME')
+            or ''
+        )
+
+        db_pass = (
+            getattr(settings, 'DB_PASSWORD', None)
+            or CONFIG.get_config('database', 'password')
+            or app.config.get('DB_PASSWORD')
+            or os.getenv('DB_PASSWORD')
+            or ''
+        )
+
+        db_host = (
+            getattr(settings, 'DB_HOST', None)
+            or CONFIG.get_config('database', 'host')
+            or app.config.get('DB_HOST')
+            or os.getenv('DB_HOST')
+            or 'localhost'
+        )
+
+        db_port = (
+            getattr(settings, 'DB_PORT', None)
+            or CONFIG.get_config('database', 'port')
+            or app.config.get('DB_PORT')
+            or os.getenv('DB_PORT')
+        )
+
+        # Default port per type
+        if not db_port:
+            if db_type == 'postgres':
+                db_port = 5432
+            elif db_type == 'mysql':
+                db_port = 3306
+            else:
+                db_port = ''
+
+        # Compose SQLAlchemy URL
+        if db_type == 'sqlite':
+            db_url = f"sqlite:///{db_path}"
+        elif db_type == 'postgres':
+            db_url = f"postgresql://{db_user}:{db_pass}@{db_host}:{db_port}/{db_name}"
+        elif db_type == 'mysql':
+            db_url = f"mysql://{db_user}:{db_pass}@{db_host}:{db_port}/{db_name}"
+        else:
+            # return jsonify({"error": f"Unsupported DB_TYPE: {db_type}"}), 401
+            raise ValueError(f"Unsupported DB_TYPE: {db_type}")
+
+        return db_url
+
+    engine = create_engine(get_db_url(), echo=False, future=True)
+    SessionLocal = sessionmaker(bind=engine)
+    database.Base.metadata.create_all(engine)
+
+    import bcrypt
+
+    def hash_password(password):
+        return bcrypt.hashpw(password.encode(), bcrypt.gensalt()).decode()
+
+    def check_password(password, hashed):
+        try:
+            return bcrypt.checkpw(password.encode(), hashed.encode())
+        except Exception as e:
+            logger.error(f"Password check error: {e}")
+            return False
+
 def index_usage():
     return f"""
     <h1>PyPihub - Local PyPI Server</h1>
@@ -144,7 +257,22 @@ def index():
     return render_template_string(index_usage() + '<br/><br/>' + '<h1>Local Packages</h1><ul>{% for p in pkgs %}<li><a href="/simple/{{p}}/">{{p}}</a></li>{% endfor %}</ul>', pkgs=packages)
 
 def check_auth(username, password):
-    # settings.AUTHS harus berupa list of tuple/list: [("user", "pass"), ...]
+    if not username or not password:
+        logger.warning("Username or password is empty")
+        return False
+    if database:
+        try:
+            with SessionLocal() as db:
+                user = db.query(User).filter_by(username=username).first()
+                if user and check_password(password, user.password):
+                    return True
+                logger.warning("Invalid username or password (DB)")
+                return False
+        except SQLAlchemyError as e:
+            logger.error(f"Database error during authentication: {e}")
+            return False
+    logger.emergency("run auth without use database")
+    # Settings.auths must be a list of tuple/list: [("user", "pass"), ...]
     auths = getattr(settings, 'AUTHS', None) or CONFIG.get_config_as_list('auths', 'users')
     if not auths or not isinstance(auths, (list, tuple)) or not auths:
         # Default: [('pypihub', 'pypihub')]
@@ -152,18 +280,27 @@ def check_auth(username, password):
     return (username, password) in auths
 
 def authenticate():
-    # Kembalikan JSON agar twine bisa menampilkan pesan error yang jelas
+    # Return json so that twine can display a clear error message
     # resp = jsonify({"error": "Invalid username or password"})
     resp = Response("Invalid username or password", status=400, content_type="text/plain")
     resp.status_code = 401
     resp.headers['WWW-Authenticate'] = 'Basic realm="Login Required"'
+    logger.debug(f"resp: {resp}")
     return resp
 
 def requires_auth(f):
+    debug("requires_auth")
+    logger.notice("run requires_auth")
     @wraps(f)
     def decorated(*args, **kwargs):
         auth = request.authorization
-        if not auth or not check_auth(auth.username, auth.password):
+        debug(auth = auth)
+        logger.debug(f"auth: {auth}")
+        try:
+            if not auth or not check_auth(auth.username, auth.password):
+                return authenticate()
+        except Exception as e:
+            logger.error(f"Authentication error: {e}")
             return authenticate()
         return f(*args, **kwargs)
     return decorated
@@ -183,13 +320,22 @@ def upload_package(package):
     logger.debug(f"file_path: {file_path}")
     file.save(file_path)
     logger.info(f"Uploaded {file.filename} to {file_path}")
+    user_id = session.get('user_id')
+    if database:
+        if not user_id and request.authorization and database:
+            with SessionLocal() as db2:
+                user = db2.query(User).filter_by(username=request.authorization.username).first()
+                if user: user_id = user.id
+        with SessionLocal() as db:
+            db.add(Package(name=package, source='upload', user_id=user_id))
+            db.commit()
     return 'Uploaded', 200
 
 @app.route('/upload/', methods=['POST'])
 @app.route('/', methods=['POST'])
 @requires_auth
 def twine_upload():
-    # Coba ambil file dari beberapa kemungkinan field
+    # Try to take files from several possible fields
     file = (
         request.files.get('file') or
         request.files.get('content') or
@@ -198,7 +344,7 @@ def twine_upload():
     debug(file = file)
     logger.warning(f"file: {file}")
     if not file:
-        # Coba ambil dari field pertama jika ada
+        # Try to take from the first field if any
         if request.files:
             file = next(iter(request.files.values()))
             debug(file = file)
@@ -211,7 +357,7 @@ def twine_upload():
 
     filename = file.filename
     debug(filename = filename)
-    # Ekstrak nama package (sederhana, bisa lebih baik)
+    # Extract the name package (simple, can be better)
     pkg_name = filename.split('-')[0].lower()
     debug(pkg_name = pkg_name)
     logger.info(f"pkg_name: {pkg_name}")
@@ -252,7 +398,7 @@ def serve_cached(package, filename):
         # Sudah ada di cache, langsung serve
         return send_from_directory(cache_path, filename)
 
-    # Cari URL file di PyPI simple index
+    # Find the URL File in Pypi Simple Index
     r = requests.get(f"{PYPI_SIMPLE_URL}/{package}/")
     debug(requests_status_code = r.status_code)
     logger.notice(f"requests.get status_code: {r.status_code}")
@@ -278,7 +424,7 @@ def serve_cached(package, filename):
         logger.error("File not found on PyPI [404]")
         abort(404, description="File not found on PyPI")
 
-    # Stream download dari PyPI ke client dan ke disk secara paralel
+    # Stream Download from Pypi to Client and Disk in parallel
     def generate():
         with requests.get(file_url, stream=True) as resp:
             if resp.status_code != 200:
@@ -290,6 +436,11 @@ def serve_cached(package, filename):
                     if chunk:
                         f.write(chunk)
                         yield chunk
+                        
+        if database:
+            with SessionLocal() as db:
+                db.add(Package(name=package, source='pypi', user_id=None))
+                db.commit()
 
     response = app.response_class(generate(), mimetype='application/octet-stream')
     response.headers['Content-Disposition'] = f'attachment; filename={filename}'
@@ -334,7 +485,7 @@ def simple_index(package):
             hash_fragment = ''
             if '#' in href:
                 hash_fragment = href[href.index('#'):]
-            # Jika belum ada di local/cache, tambahkan link ke /cache/ dengan hash
+            # If not in local/cache, add link to/cache/with hash
             if not os.path.exists(os.path.join(local_path, filename)) and not os.path.exists(os.path.join(cached_path, filename)):
                 links.append(f'<a href="/cache/{package}/{filename}{hash_fragment}">{filename}</a>')
                 found = True
@@ -346,6 +497,62 @@ def simple_index(package):
 
     html = f"<html><body>{''.join(links)}</body></html>"
     return html
+
+@app.route('/signin', methods=['GET', 'POST'])
+def signin():
+    if request.method == 'POST':
+        username = request.form.get('username')
+        password = request.form.get('password')
+        if database:
+            with SessionLocal() as db:
+                user = db.query(User).filter_by(username=username).first()
+                if user and check_password(password, user.password):
+                    session['user_id'] = user.id
+                    return jsonify({"message": "Sign in successful"})
+        return jsonify({"error": "Invalid username or password. Singin can be used with database."}), 401
+    # Simple HTML form for sign in
+    return '''
+        <form method="post">
+            Username: <input name="username"><br>
+            Password: <input name="password" type="password"><br>
+            <input type="submit" value="Sign In">
+        </form>
+    '''
+
+@app.route('/signout')
+def signout():
+    session.pop('user_id', None)
+    return jsonify({"message": "Signed out"})
+
+def create_user_cli(username = None, password = None):
+    username = username or input("Username: ")
+    password = password or getpass("Password: ")
+    if database:
+        with SessionLocal() as db:
+            if db.query(User).filter_by(username=username).first():
+                print("User already exists.")
+                return
+            hashed_pw = hash_password(password)
+            user = User(username=username, password=hashed_pw)
+            db.add(user)
+            db.commit()
+            print("User created.")
+    else:
+        print("Database not enabled.")
+        
+def list_user():
+    if database:
+        with SessionLocal() as db:
+            users = db.query(User).all()
+            if users:
+                console.print("[bold green]Users:[/]")
+                for user in users:
+                    console.print(f"- {user.username}")
+            else:
+                console.print("[white on red]No users found.[/]")
+    else:
+        console.print("[bold red]Database not enabled, cannot list users.[/]")
+    return
 
 def version():
     # __version__.py must contain 'version = "x.y.z"' or 'version = 'x.y.z'' or 'version = x.y.z'
@@ -391,7 +598,7 @@ def usage():
         help='Directory for cached packages (default: %(default)s)'
     )
     parser.add_argument(
-        '-p', '--pypi-simple-url',
+        '-i', '--pypi-simple-url',
         type=str,
         default=PYPI_SIMPLE_URL,
         help='PyPI simple index URL (default: %(default)s)'
@@ -430,7 +637,38 @@ def usage():
     
     parser.add_argument('-v', '--verbose', action='store_true', help='Enable verbose output')
     
-    parser.add_argument('serve', help='Serve the local PyPI server with default settings', nargs='?', default='serve')
+    parser.add_argument(
+        'command',
+        help='Command to run: serve (default), user (manage users)',
+        nargs='?',
+        default='serve',
+        choices=['serve', 'user']
+    )
+    
+    parser.add_argument(
+        '-u', '--username',
+        type=str,
+        help='Username for user management (required for user command)'
+    )
+    
+    parser.add_argument(
+        '-p', '--password',
+        type=str,
+        help='Password for user management (required for user command)',
+        default=None
+    )
+    
+    parser.add_argument(
+        '--list',
+        action='store_true',
+        help='List all users (only works with user command)'
+    )
+    
+    parser.add_argument(
+        '-a', '--add',
+        action='store_true',
+        help='Add a new user (only works with user command, requires username and password)'
+    )
 
     if len(sys.argv) == 1:
         parser.print_help()
@@ -466,11 +704,9 @@ def usage():
     logger.info(f"os.environ['HOST']: {os.environ['HOST']}")
     debug(os_env_PORT = os.environ['PORT'])
     logger.info(f"os.environ['PORT']: {os.environ['PORT']}")
+    
+    if args.command == 'serve':
         
-    debug(f"start server on {os.environ['HOST']}:{os.environ['PORT']}")    
-    logger.notice(f"start server on {os.environ['HOST']}:{os.environ['PORT']}")
-
-    if args.serve == 'serve':
         # Start the Flask server
         app.config['BASE_DIR'] = BASE_DIR
         app.config['LOCAL_PKG_DIR'] = LOCAL_PKG_DIR
@@ -494,14 +730,37 @@ def usage():
         app.config['ENV'] = 'development'
         app.config['TESTING'] = False
         app.config['SECRET_KEY'] = 'your_secret_key'  # Set a secret key for session management
-        app.run()
-        # Use the environment variables set above
-        
-    # app.run(
-    #     host = os.environ['HOST'],
-    #     port = os.environ['PORT']
-    # )
+        debug(f"start server on {app.config['HOST']}:{app.config['PORT']}")    
+        logger.notice(f"start server on {app.config['HOST']}:{app.config['PORT']}")
 
-if __name__ == '__main__':
-    
+        app.run()
+    elif args.command == 'user':
+        if args.list:
+            return list_user()
+        elif args.add:
+            if not args.username or not args.password:
+                console.print("[bold red]Username and password are required to add a user.[/]")
+                return
+            create_user_cli(
+                username=args.username,
+                password=args.password
+            )
+            return
+        elif args.username:
+            if not args.password: 
+                console.print("[black on #FFFF00]Password:[/] ", end = '')
+                args.password = getpass()
+            if args.username and not args.password:
+                console.print("[bold red]Password is required to create a user.[/]")
+                return
+            create_user_cli(
+                username=args.username,
+                password=args.password
+            )
+            return
+        else:
+            console.print("[black on #FFFF00    ]No command specified. Use --list to list users or --add to add a new user.[/]")
+            return
+
+if __name__ == '__main__':    
     usage()

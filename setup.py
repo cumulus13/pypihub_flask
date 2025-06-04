@@ -37,6 +37,9 @@ setup(
     ],
     extras_require={
         "flask": ["Flask"],
+        "mysql": ["SQLAlchemy", "mysqlclient"],
+        "postgres": ["SQLAlchemy", "psycopg2"],
+        "bcrypt": ["bcrypt"],
     },
     classifiers=[
         "Development Status :: 4 - Beta",
