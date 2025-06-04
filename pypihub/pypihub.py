@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 
 """
-PyPix - Local PyPI Server
+PyPihub - Local PyPI Server
 Copyright (C) 2025 Hadi Cahyadi <cumulus13@gmail.com>
 
 This library is free software; you can redistribute it and/or
@@ -45,7 +45,10 @@ from pathlib import Path
 from functools import wraps
 
 if (Path(__file__).parent / 'settings.py').is_file():
-    import settings as local_settings
+    try:
+        from . import settings as local_settings
+    except:
+        import settings as local_settings
 else:
     local_settings = None
 
@@ -120,7 +123,7 @@ os.makedirs(CACHE_DIR, exist_ok=True)
 
 def index_usage():
     return f"""
-    <h1>PyPix - Local PyPI Server</h1>
+    <h1>PyPihub - Local PyPI Server</h1>
     <p>Upload packages to your local PyPI server.</p>
     <h2>Usage</h2>
     <ul>
@@ -144,8 +147,8 @@ def check_auth(username, password):
     # settings.AUTHS harus berupa list of tuple/list: [("user", "pass"), ...]
     auths = getattr(settings, 'AUTHS', None) or CONFIG.get_config_as_list('auths', 'users')
     if not auths or not isinstance(auths, (list, tuple)) or not auths:
-        # Default: [('pypix', 'pypix')]
-        auths = [('pypix', 'pypix')]
+        # Default: [('pypihub', 'pypihub')]
+        auths = [('pypihub', 'pypihub')]
     return (username, password) in auths
 
 def authenticate():
@@ -360,7 +363,7 @@ def version():
 
 def usage():
     parser = argparse.ArgumentParser(
-        description="PyPix - A simple local PyPI server with caching and upload capabilities.",
+        description="PyPihub - A simple local PyPI server with caching and upload capabilities.",
         formatter_class=CustomRichHelpFormatter
     )
     parser.add_argument(
@@ -421,8 +424,8 @@ def usage():
     parser.add_argument(
         '-V', '--version',
         action='version',
-        version=f'PyPix {version()}',
-        help='Show the version of PyPix'
+        version=f'PyPihub {version()}',
+        help='Show the version of PyPihub'
     )
     
     parser.add_argument('-v', '--verbose', action='store_true', help='Enable verbose output')
@@ -476,10 +479,10 @@ def usage():
         app.config['HOST'] = HOST
         app.config['PORT'] = int(PORT) if PORT else 5000
         
-        logger.info("Starting PyPix server...")
+        logger.info("Starting PyPihub server...")
         debug(app_config = app.config)
         logger.debug(f"app.config: {app.config}")
-        console.print(f"[bold green]Starting PyPix server on {HOST}:{PORT} ...[/]")
+        console.print(f"[bold green]Starting PyPihub server on {HOST}:{PORT} ...[/]")
         console.print(f"[bold blue]Base Directory: {BASE_DIR}[/]")
         console.print(f"[bold blue]Local Package Directory: {LOCAL_PKG_DIR}[/]")
         console.print(f"[bold blue]Cache Directory: {CACHE_DIR}[/]")

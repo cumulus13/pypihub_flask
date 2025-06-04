@@ -1,6 +1,6 @@
-# PyPix - Local PyPI Server
+# PyPihub - Local PyPI Server
 
-PyPix is a simple local PyPI server with caching and package upload capabilities. This server allows you to host your Python packages locally, cache packages from the official PyPI, and supports package uploads via `twine`.
+PyPihub is a simple local PyPI server with caching and package upload capabilities. This server allows you to host your Python packages locally, cache packages from the official PyPI, and supports package uploads via `twine`.
 
 ## Key Features
 
@@ -22,14 +22,19 @@ pip install flask beautifulsoup4 requests pydebugger configset rich rich-argpars
 
 ```bash
 git clone <repository-url>
-cd pypix
+cd pypihub
+```
+
+or you can install with pip:
+```bash
+$ pip install pypihub[flask]
 ```
 
 ## Configuration
 
-### 1. Configuration File (pypix.ini)
+### 1. Configuration File (pypihub.ini)
 
-Create a `pypix.ini` as an alternative config file or it will be created automatically in the same directory as `pypix.py`:
+Create a `pypihub.ini` as an alternative config file or it will be created automatically in the same directory as `pypihub.py`:
 
 ```ini
 [dirs]
@@ -45,7 +50,7 @@ host = 0.0.0.0
 port = 5000
 
 [auths]
-users = pypix,pypix;user2,pass2
+users = pypihub,pypihub;user2,pass2
 ```
 
 ### 2. Settings File (settings.py)
@@ -59,8 +64,8 @@ CACHE_DIR = "/path/to/cache"
 PYPI_SIMPLE_URL = "https://pypi.org/simple"
 HOST = "0.0.0.0"
 PORT = 5000
-AUTHS = [("pypix", "pypix"), ("user2", "pass2")]
-CONFIGFILE = "pypix.ini"
+AUTHS = [("pypihub", "pypihub"), ("user2", "pass2")]
+CONFIGFILE = "pypihub.ini"
 ```
 
 ### 3. Environment Variables
@@ -72,7 +77,7 @@ export CACHE_DIR="/path/to/cache"
 export PYPI_SIMPLE_URL="https://pypi.org/simple"
 export HOST="0.0.0.0"
 export PORT="5000"
-export CONFIGFILE="pypix.ini"
+export CONFIGFILE="pypihub.ini"
 ```
 
 ## Usage
@@ -81,17 +86,17 @@ export CONFIGFILE="pypix.ini"
 
 ```bash
 # Using default settings
-python pypix.py
+python pypihub.py
 
 # With custom configuration
 # Option: '-c /path/to/config.ini'
-python pypix.py -c /path/to/config.ini -H 127.0.0.1 -P 8080
+python pypihub.py -c /path/to/config.ini -H 127.0.0.1 -P 8080
 
 # Verbose mode
-python pypix.py -v
+python pypihub.py -v
 
 # Show help
-python pypix.py -h
+python pypihub.py -h
 ```
 
 ### Command Line Arguments
@@ -104,7 +109,7 @@ python pypix.py -h
 -p, --pypi-simple-url PyPI simple index URL
 -H, --host            Host to run server on
 -P, --port            Port to run server on
--V, --version         Show PyPix version
+-V, --version         Show PyPihub version
 -v, --verbose         Enable verbose output
 ```
 
@@ -116,12 +121,12 @@ python pypix.py -h
 
 ```ini
 [distutils]
-index-servers = pypix
+index-servers = pypihub
 
-[pypix]
+[pypihub]
 repository = http://localhost:5000/
-username = pypix
-password = pypix
+username = pypihub
+password = pypihub
 ```
 
 2. **Upload package**:
@@ -130,20 +135,20 @@ password = pypix
 # Build package first
 python setup.py sdist bdist_wheel
 
-# Upload to pypix
-twine upload --repository pypix dist/*
+# Upload to pypihub
+twine upload --repository pypihub dist/*
 ```
 
 ### Manual Upload via HTTP
 
 ```bash
 curl -X POST \
-  -u pypix:pypix \
+  -u pypihub:pypihub \
   -F "file=@package-1.0.0-py3-none-any.whl" \
   http://localhost:5000/upload/package-name/
 ```
 
-## Installing Packages from PyPix
+## Installing Packages from PyPihub
 
 ### Configure pip
 
@@ -158,10 +163,10 @@ trusted-host = localhost
 ### Install Package
 
 ```bash
-# Install from pypix (with fallback to PyPI)
+# Install from pypihub (with fallback to PyPI)
 pip install package-name
 
-# Install only from pypix
+# Install only from pypihub
 pip install --index-url http://localhost:5000/simple/ package-name
 
 # Install with extra index
@@ -185,9 +190,9 @@ pip install --extra-index-url http://localhost:5000/simple/ package-name
 ## Directory Structure
 
 ```
-pypix/
-├── pypix.py              # Main application
-├── pypix.ini             # Configuration file (optional)
+pypihub/
+├── pypihub.py              # Main application
+├── pypihub.ini             # Configuration file (optional)
 ├── settings.py           # Settings file (optional)
 ├── packages/             # Local packages directory
 │   └── package-name/
@@ -202,16 +207,16 @@ pypix/
 ## Authentication
 
 Default credentials:
-- Username: `pypix`
-- Password: `pypix`
+- Username: `pypihub`
+- Password: `pypihub`
 
 `Change the default credentials before using in production.`
 
-To change credentials, edit configuration in `settings.py`, `pypix.ini`, or environment variables.
+To change credentials, edit configuration in `settings.py`, `pypihub.ini`, or environment variables.
 
 ## Logging
 
-PyPix uses custom logging with levels:
+PyPihub uses custom logging with levels:
 - EMERGENCY
 - CRITICAL
 - ERROR
@@ -261,7 +266,7 @@ Set `verbose` mode with `-v` for debug logging.
 
 ## License
 
-PyPix is released under the [GNU Lesser General Public License v3.0 (LGPL-3.0)](https://www.gnu.org/licenses/lgpl-3.0.html).
+PyPihub is released under the [GNU Lesser General Public License v3.0 (LGPL-3.0)](https://www.gnu.org/licenses/lgpl-3.0.html).
 
 You should have received a copy of the GNU Lesser General Public License along with this program.  
 If not, see [https://www.gnu.org/licenses/](https://www.gnu.org/licenses/).
@@ -274,7 +279,7 @@ For issues and questions, please create/open an issue in the repository or conta
 
 ---
 
-**PyPix** - Simplifying local Python package management
+**PyPihub** - Simplifying local Python package management
 `Warning: Do not expose this server to the public internet without proper authentication and security measures.`
 
 ## author
