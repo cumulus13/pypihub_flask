@@ -6,6 +6,7 @@ This version uses Flask. If you install via pip, use: `pip install pypihub[flask
 
 ## Key Features
 
+- **Multi-platform**: Supports any platform (Linux, Windows, Mac, etc.)
 - **Local Package Hosting**: Host your own Python packages locally
 - **PyPI Caching**: Automatic caching of packages from official PyPI for faster access
 - **Twine Support**: Upload packages using `twine` with authentication
