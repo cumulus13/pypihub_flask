@@ -32,7 +32,7 @@ except:
 # logging.basicConfig(level=logging.CRITICAL)
 
 logger = Logger.setup_logging()
-logger.setLevel(Logger.EMERGENCY_LEVEL)
+# logger.setLevel(Logger.EMERGENCY_LEVEL)
 
 # logger = logging.getLogger(__name__)
 
@@ -91,39 +91,86 @@ class settings:
         if hasattr(local_settings, item):
             return getattr(local_settings, item)
         # raise AttributeError(f"'{type(self).__name__}' object has no attribute '{item}'")
-        return ""
+        return None
 
 settings = settings()
 
 app = Flask(__name__)
 
-CONFIGFILE = os.getenv('CONFIGFILE') if os.getenv('CONFIGFILE') else settings.CONFIGFILE if Path(settings.CONFIGFILE).is_file() else str(Path(__file__).parent / Path(__file__).stem) + '.ini'
-debug(CONFIGFILE = CONFIGFILE)
+CONFIGFILE = (
+    os.getenv('CONFIGFILE')
+    or (settings.CONFIGFILE if getattr(settings, 'CONFIGFILE', None) and Path(settings.CONFIGFILE).is_file() else None)
+    or str(Path(__file__).parent / (Path(__file__).stem + '.ini'))
+)
+debug(CONFIGFILE=CONFIGFILE)
 logger.info(f"CONFIGFILE: {CONFIGFILE}")
 CONFIG = configset(CONFIGFILE)
 
-BASE_DIR = Path(os.getenv('BASE_DIR')) if os.getenv('BASE_DIR') and Path(os.getenv('BASE_DIR', CONFIG.get_config('dirs', 'base'))).is_dir() else Path(settings.BASE_DIR) if settings.BASE_DIR else Path(__file__).parent
-debug(BASE_DIR = str(BASE_DIR))
+BASE_DIR = (
+    Path(os.getenv('BASE_DIR'))
+    if os.getenv('BASE_DIR') and Path(os.getenv('BASE_DIR')).is_dir()
+    else Path(settings.BASE_DIR)
+    if getattr(settings, 'BASE_DIR', None)
+    else Path(__file__).parent
+)
+debug(BASE_DIR=str(BASE_DIR))
 logger.info(f"BASE_DIR: {BASE_DIR}")
 
-LOCAL_PKG_DIR = Path(os.getenv('LOCAL_PKG_DIR')) if os.getenv('LOCAL_PKG_DIR') and Path(os.getenv('LOCAL_PKG_DIR', CONFIG.get_config('dirs', 'local_pkg'))).is_dir() else Path(settings.LOCAL_PKG_DIR) if settings.LOCAL_PKG_DIR else BASE_DIR / "packages"
-debug(LOCAL_PKG_DIR = str(LOCAL_PKG_DIR))
+logger.info(f"os.getenv('LOCAL_PKG_DIR'): {os.getenv('LOCAL_PKG_DIR')}, is_dir: {Path(os.getenv('LOCAL_PKG_DIR')).is_dir() if os.getenv('LOCAL_PKG_DIR') else None}")
+logger.info(f"CONFIG.get_config('dirs', 'local_pkg'): {CONFIG.get_config('dirs', 'local_pkg')}, is_dir: {Path(CONFIG.get_config('dirs', 'local_pkg')).is_dir() if CONFIG.get_config('dirs', 'local_pkg') else None}")
+logger.info(f"settings.LOCAL_PKG_DIR: {getattr(settings, 'LOCAL_PKG_DIR', None)}, is_dir: {Path(getattr(settings, 'LOCAL_PKG_DIR', '')) .is_dir() if getattr(settings, 'LOCAL_PKG_DIR', None) else None}")
+LOCAL_PKG_DIR = (
+    Path(os.getenv('LOCAL_PKG_DIR'))
+    if os.getenv('LOCAL_PKG_DIR') and Path(os.getenv('LOCAL_PKG_DIR')).is_dir()
+    else Path(CONFIG.get_config('dirs', 'local_pkg'))
+    if CONFIG.get_config('dirs', 'local_pkg') and Path(CONFIG.get_config('dirs', 'local_pkg')).is_dir()
+    else Path(getattr(settings, 'LOCAL_PKG_DIR', ''))
+    if getattr(settings, 'LOCAL_PKG_DIR', None)
+    else BASE_DIR / "packages"
+)
+debug(LOCAL_PKG_DIR=str(LOCAL_PKG_DIR))
 logger.info(f"LOCAL_PKG_DIR: {LOCAL_PKG_DIR}")
 
-CACHE_DIR = Path(os.getenv('CACHE_DIR')) if os.getenv('CACHE_DIR') and Path(os.getenv('CACHE_DIR', CONFIG.get_config('dirs', 'cache'))).is_dir() else Path(settings.CACHE_DIR) if settings.CACHE_DIR else BASE_DIR / "cache"
-debug(CACHE_DIR = str(CACHE_DIR))
+logger.info(f"os.getenv('CACHE_DIR'): {os.getenv('CACHE_DIR')}, is_dir: {Path(os.getenv('CACHE_DIR')).is_dir() if os.getenv('CACHE_DIR') else None}")
+logger.info(f"CONFIG.get_config('dirs', 'cache'): {CONFIG.get_config('dirs', 'cache')}, is_dir: {Path(CONFIG.get_config('dirs', 'cache')).is_dir() if CONFIG.get_config('dirs', 'cache') else None}")
+logger.info(f"settings.CACHE_DIR: {getattr(settings, 'CACHE_DIR', None)}, is_dir: {Path(getattr(settings, 'CACHE_DIR', '')) .is_dir() if getattr(settings, 'CACHE_DIR', None) else None}")
+CACHE_DIR = (
+    Path(os.getenv('CACHE_DIR'))
+    if os.getenv('CACHE_DIR') and Path(os.getenv('CACHE_DIR')).is_dir()
+    else Path(CONFIG.get_config('dirs', 'cache'))
+    if CONFIG.get_config('dirs', 'cache') and Path(CONFIG.get_config('dirs', 'cache')).is_dir()
+    else Path(getattr(settings, 'CACHE_DIR', ''))
+    if getattr(settings, 'CACHE_DIR', None)
+    else BASE_DIR / "cache"
+)
+debug(CACHE_DIR=str(CACHE_DIR))
 logger.info(f"CACHE_DIR: {CACHE_DIR}")
 
-PYPI_SIMPLE_URL = os.getenv('PYPI_SIMPLE_URL', settings.PYPI_SIMPLE_URL) or CONFIG.get_config('urls', 'pypi_simple') or "https://pypi.org/simple"
-debug(PYPI_SIMPLE_URL = PYPI_SIMPLE_URL)
+PYPI_SIMPLE_URL = (
+    os.getenv('PYPI_SIMPLE_URL')
+    or getattr(settings, 'PYPI_SIMPLE_URL', None)
+    or CONFIG.get_config('urls', 'pypi_simple')
+    or "https://pypi.org/simple"
+)
+debug(PYPI_SIMPLE_URL=PYPI_SIMPLE_URL)
 logger.info(f"PYPI_SIMPLE_URL: {PYPI_SIMPLE_URL}")
 
-HOST = os.getenv('HOST', settings.HOST) or CONFIG.get_config('server', 'host') or '0.0.0.0'
-debug(HOST = HOST)
+HOST = (
+    os.getenv('HOST')
+    or getattr(settings, 'HOST', None)
+    or CONFIG.get_config('server', 'host')
+    or '0.0.0.0'
+)
+debug(HOST=HOST)
 logger.info(f"HOST: {HOST}")
 
-PORT = int(os.getenv('PORT', settings.PORT) or CONFIG.get_config('server', 'port') or 5000)
-debug(PORT = PORT)
+PORT = int(
+    os.getenv('PORT')
+    or getattr(settings, 'PORT', None)
+    or CONFIG.get_config('server', 'port')
+    or 5000
+)
+debug(PORT=PORT)
 logger.info(f"PORT: {PORT}")
 
 print("\n")
@@ -135,7 +182,7 @@ if database:
     from sqlalchemy import create_engine
     from sqlalchemy.orm import sessionmaker
     from sqlalchemy.exc import SQLAlchemyError
-    
+
     User = database.User
     Package = database.Package
 
@@ -712,8 +759,8 @@ def usage():
         app.config['LOCAL_PKG_DIR'] = LOCAL_PKG_DIR
         app.config['CACHE_DIR'] = CACHE_DIR
         app.config['PYPI_SIMPLE_URL'] = PYPI_SIMPLE_URL
-        app.config['HOST'] = HOST
-        app.config['PORT'] = int(PORT) if PORT else 5000
+        app.config['HOST'] = args.host
+        app.config['PORT'] = args.port or int(PORT) if PORT else 5000
         
         logger.info("Starting PyPihub server...")
         debug(app_config = app.config)
@@ -724,8 +771,8 @@ def usage():
         console.print(f"[bold blue]Cache Directory: {CACHE_DIR}[/]")
         console.print(f"[bold blue]PyPI Simple URL: {PYPI_SIMPLE_URL}[/]")
         console.print(f"[bold blue]Configuration File: {CONFIGFILE}[/]")
-        console.print(f"[bold blue]Host: {HOST}[/]")
-        console.print(f"[bold blue]Port: {PORT}[/]")
+        console.print(f"[bold blue]Host: {args.host}[/]")
+        console.print(f"[bold blue]Port: {args.port}[/]")
         app.config['DEBUG'] = True
         app.config['ENV'] = 'development'
         app.config['TESTING'] = False
@@ -733,7 +780,12 @@ def usage():
         debug(f"start server on {app.config['HOST']}:{app.config['PORT']}")    
         logger.notice(f"start server on {app.config['HOST']}:{app.config['PORT']}")
 
-        app.run()
+        app.run(
+            host=args.host,
+            port=args.port,
+            debug=True if args.verbose else False,
+            use_reloader=False  # Disable reloader to avoid multiple instances
+        )
     elif args.command == 'user':
         if args.list:
             return list_user()
