@@ -4,6 +4,8 @@ PyPihub is a simple local PyPI server with caching and package upload capabiliti
 
 This version uses Flask. If you install via pip, use: `pip install pypihub[flask]`
 
+When installing with pip, PyPihub will not interrupt the download or installation process. If the requested package is not found in the `cache` or `package` directory, PyPihub will fetch it directly from pypi.org and simultaneously serve it to the client. This means the client does not have to wait for the server to finish downloading before receiving the package. All downloaded packages from pypi.org will also be saved to the cache for future use.
+
 ## Key Features
 
 - **Multi-platform**: Supports any platform (Linux, Windows, Mac, etc.)
