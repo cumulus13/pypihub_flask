@@ -571,21 +571,28 @@ def signout():
     session.pop('user_id', None)
     return jsonify({"message": "Signed out"})
 
-def create_user_cli(username = None, password = None):
+def create_user_cli(username=None, password=None):
     username = username or input("Username: ")
     password = password or getpass("Password: ")
     if database:
         with SessionLocal() as db:
-            if db.query(User).filter_by(username=username).first():
-                print("User already exists.")
+            user = db.query(User).filter_by(username=username).first()
+            if user:
+                # If user exists and password is provided, update password
+                if password:
+                    user.password = hash_password(password)
+                    db.commit()
+                    console.print(f"\n ⚠️ [bold #FFFF00]Password updated for user '{username}'.[/]")
+                else:
+                    console.print(f"\n 🚩 [bold #00FFFF]User '{username}' already exists. No password provided to update.[/]")
                 return
             hashed_pw = hash_password(password)
-            user = User(username=username, password=hashed_pw)
-            db.add(user)
+            new_user = User(username=username, password=hashed_pw)
+            db.add(new_user)
             db.commit()
-            print("User created.")
+            console.print(f"\n ⚠️ [bold #FFFF00]User '{username}' created.[/]")
     else:
-        print("Database not enabled.")
+        console.print("\n ❌ [bold red]Database not enabled.[/]")
         
 def list_user():
     if database:
@@ -752,8 +759,7 @@ def usage():
     debug(os_env_PORT = os.environ['PORT'])
     logger.info(f"os.environ['PORT']: {os.environ['PORT']}")
     
-    if args.command == 'serve':
-        
+    if args.command == 'serve' and not args.list:
         # Start the Flask server
         app.config['BASE_DIR'] = BASE_DIR
         app.config['LOCAL_PKG_DIR'] = LOCAL_PKG_DIR
@@ -811,8 +817,10 @@ def usage():
             )
             return
         else:
-            console.print("[black on #FFFF00    ]No command specified. Use --list to list users or --add to add a new user.[/]")
+            console.print("\n❌ [black on #FFFF00]No command specified. Use --list to list users or --add to add a new user.[/]")
             return
+    elif args.list:
+        return list_user()
 
 if __name__ == '__main__':    
     usage()
