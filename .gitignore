@@ -21,3 +21,6 @@ __pycache__/
 ../django/
 ../packages/
 dist*/
+
+# Added entries (1 items)
+*.sublime-project

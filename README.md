@@ -219,6 +219,13 @@ Default credentials:
 
 To change credentials, edit configuration in `settings.py`, `pypihub.ini`, or environment variables.
 
+example 'pypihub.ini' for authentication
+
+```ini
+[auths]
+users = userame password
+```
+
 ## Logging
 
 PyPihub uses custom logging with levels:
