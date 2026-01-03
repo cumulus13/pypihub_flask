@@ -1,5 +1,11 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 #!encoding:UTF-8
+
+# File: pypihub/logger.py
+# Author: Hadi Cahyadi <cumulus13@gmail.com>
+# Date: 2025-12-31
+# Description: 
+# License: MIT
 
 import logging
 #from make_colors import make_colors

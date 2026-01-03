@@ -1,3 +1,11 @@
+#!/usr/bin/env python3
+
+# File: pypihub/database.py
+# Author: Hadi Cahyadi <cumulus13@gmail.com>
+# Date: 2025-12-31
+# Description: 
+# License: MIT
+
 from sqlalchemy import create_engine, Column, Integer, String, DateTime
 from sqlalchemy.orm import declarative_base, sessionmaker
 from datetime import datetime

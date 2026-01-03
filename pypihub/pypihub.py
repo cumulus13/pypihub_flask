@@ -1,5 +1,11 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
+
+# File: pypihub/pypihub.py
 # -*- coding: utf-8 -*-
+# Author: Hadi Cahyadi <cumulus13@gmail.com>
+# Date: 2025-12-31
+# Description: 
+# License: MIT
 
 """
 PyPihub - Local PyPI Server
@@ -37,7 +43,7 @@ logger = Logger.setup_logging()
 # logger = logging.getLogger(__name__)
 
 import requests
-from flask import Flask, send_from_directory, request, render_template_string, abort, Response, jsonify, session, redirect, url_for
+from flask import Flask, send_from_directory, request, render_template_string, abort, Response, jsonify, session#, redirect, url_for
 from bs4 import BeautifulSoup
 from pydebugger.debug import debug
 from configset import configset
@@ -93,13 +99,13 @@ class settings:
         # raise AttributeError(f"'{type(self).__name__}' object has no attribute '{item}'")
         return None
 
-settings = settings()
+settings = settings()  # type: ignore
 
 app = Flask(__name__)
 
 CONFIGFILE = (
     os.getenv('CONFIGFILE')
-    or (settings.CONFIGFILE if getattr(settings, 'CONFIGFILE', None) and Path(settings.CONFIGFILE).is_file() else None)
+    or (settings.CONFIGFILE if getattr(settings, 'CONFIGFILE', None) and Path(settings.CONFIGFILE).is_file() else None)  # type: ignore
     or str(Path(__file__).parent / (Path(__file__).stem + '.ini'))
 )
 debug(CONFIGFILE=CONFIGFILE)
@@ -107,23 +113,23 @@ logger.info(f"CONFIGFILE: {CONFIGFILE}")
 CONFIG = configset(CONFIGFILE)
 
 BASE_DIR = (
-    Path(os.getenv('BASE_DIR'))
-    if os.getenv('BASE_DIR') and Path(os.getenv('BASE_DIR')).is_dir()
-    else Path(settings.BASE_DIR)
+    Path(os.getenv('BASE_DIR'))  # type: ignore
+    if os.getenv('BASE_DIR') and Path(os.getenv('BASE_DIR')).is_dir()  # type: ignore
+    else Path(settings.BASE_DIR)  # type: ignore
     if getattr(settings, 'BASE_DIR', None)
     else Path(__file__).parent
 )
 debug(BASE_DIR=str(BASE_DIR))
 logger.info(f"BASE_DIR: {BASE_DIR}")
 
-logger.info(f"os.getenv('LOCAL_PKG_DIR'): {os.getenv('LOCAL_PKG_DIR')}, is_dir: {Path(os.getenv('LOCAL_PKG_DIR')).is_dir() if os.getenv('LOCAL_PKG_DIR') else None}")
-logger.info(f"CONFIG.get_config('dirs', 'local_pkg'): {CONFIG.get_config('dirs', 'local_pkg')}, is_dir: {Path(CONFIG.get_config('dirs', 'local_pkg')).is_dir() if CONFIG.get_config('dirs', 'local_pkg') else None}")
+logger.info(f"os.getenv('LOCAL_PKG_DIR'): {os.getenv('LOCAL_PKG_DIR')}, is_dir: {Path(os.getenv('LOCAL_PKG_DIR')).is_dir() if os.getenv('LOCAL_PKG_DIR') else None}")  # type: ignore
+logger.info(f"CONFIG.get_config('dirs', 'local_pkg'): {CONFIG.get_config('dirs', 'local_pkg')}, is_dir: {Path(CONFIG.get_config('dirs', 'local_pkg')).is_dir() if CONFIG.get_config('dirs', 'local_pkg') else None}")  # type: ignore
 logger.info(f"settings.LOCAL_PKG_DIR: {getattr(settings, 'LOCAL_PKG_DIR', None)}, is_dir: {Path(getattr(settings, 'LOCAL_PKG_DIR', '')) .is_dir() if getattr(settings, 'LOCAL_PKG_DIR', None) else None}")
 LOCAL_PKG_DIR = (
-    Path(os.getenv('LOCAL_PKG_DIR'))
-    if os.getenv('LOCAL_PKG_DIR') and Path(os.getenv('LOCAL_PKG_DIR')).is_dir()
-    else Path(CONFIG.get_config('dirs', 'local_pkg'))
-    if CONFIG.get_config('dirs', 'local_pkg') and Path(CONFIG.get_config('dirs', 'local_pkg')).is_dir()
+    Path(os.getenv('LOCAL_PKG_DIR'))  # type: ignore
+    if os.getenv('LOCAL_PKG_DIR') and Path(os.getenv('LOCAL_PKG_DIR')).is_dir()  # type: ignore
+    else Path(CONFIG.get_config('dirs', 'local_pkg'))  # type: ignore
+    if CONFIG.get_config('dirs', 'local_pkg') and Path(CONFIG.get_config('dirs', 'local_pkg')).is_dir()  # type: ignore
     else Path(getattr(settings, 'LOCAL_PKG_DIR', ''))
     if getattr(settings, 'LOCAL_PKG_DIR', None)
     else BASE_DIR / "packages"
@@ -131,14 +137,14 @@ LOCAL_PKG_DIR = (
 debug(LOCAL_PKG_DIR=str(LOCAL_PKG_DIR))
 logger.info(f"LOCAL_PKG_DIR: {LOCAL_PKG_DIR}")
 
-logger.info(f"os.getenv('CACHE_DIR'): {os.getenv('CACHE_DIR')}, is_dir: {Path(os.getenv('CACHE_DIR')).is_dir() if os.getenv('CACHE_DIR') else None}")
-logger.info(f"CONFIG.get_config('dirs', 'cache'): {CONFIG.get_config('dirs', 'cache')}, is_dir: {Path(CONFIG.get_config('dirs', 'cache')).is_dir() if CONFIG.get_config('dirs', 'cache') else None}")
+logger.info(f"os.getenv('CACHE_DIR'): {os.getenv('CACHE_DIR')}, is_dir: {Path(os.getenv('CACHE_DIR')).is_dir() if os.getenv('CACHE_DIR') else None}")  # type: ignore
+logger.info(f"CONFIG.get_config('dirs', 'cache'): {CONFIG.get_config('dirs', 'cache')}, is_dir: {Path(CONFIG.get_config('dirs', 'cache')).is_dir() if CONFIG.get_config('dirs', 'cache') else None}")  # type: ignore
 logger.info(f"settings.CACHE_DIR: {getattr(settings, 'CACHE_DIR', None)}, is_dir: {Path(getattr(settings, 'CACHE_DIR', '')) .is_dir() if getattr(settings, 'CACHE_DIR', None) else None}")
 CACHE_DIR = (
-    Path(os.getenv('CACHE_DIR'))
-    if os.getenv('CACHE_DIR') and Path(os.getenv('CACHE_DIR')).is_dir()
-    else Path(CONFIG.get_config('dirs', 'cache'))
-    if CONFIG.get_config('dirs', 'cache') and Path(CONFIG.get_config('dirs', 'cache')).is_dir()
+    Path(os.getenv('CACHE_DIR'))  # type: ignore
+    if os.getenv('CACHE_DIR') and Path(os.getenv('CACHE_DIR')).is_dir()  # type: ignore
+    else Path(CONFIG.get_config('dirs', 'cache'))  # type: ignore
+    if CONFIG.get_config('dirs', 'cache') and Path(CONFIG.get_config('dirs', 'cache')).is_dir()  # type: ignore
     else Path(getattr(settings, 'CACHE_DIR', ''))
     if getattr(settings, 'CACHE_DIR', None)
     else BASE_DIR / "cache"
@@ -149,25 +155,20 @@ logger.info(f"CACHE_DIR: {CACHE_DIR}")
 PYPI_SIMPLE_URL = (
     os.getenv('PYPI_SIMPLE_URL')
     or getattr(settings, 'PYPI_SIMPLE_URL', None)
-    or CONFIG.get_config('urls', 'pypi_simple')
+    or CONFIG.get_config('urls', 'pypi_simple')  # type: ignore
     or "https://pypi.org/simple"
 )
 debug(PYPI_SIMPLE_URL=PYPI_SIMPLE_URL)
 logger.info(f"PYPI_SIMPLE_URL: {PYPI_SIMPLE_URL}")
 
-HOST = (
-    os.getenv('HOST')
-    or getattr(settings, 'HOST', None)
-    or CONFIG.get_config('server', 'host')
-    or '0.0.0.0'
-)
+HOST = os.getenv('HOST', getattr(settings, 'HOST', None)) or CONFIG.get_config('server', 'host', default = '0.0.0.0')  # type: ignore
 debug(HOST=HOST)
 logger.info(f"HOST: {HOST}")
 
 PORT = int(
     os.getenv('PORT')
     or getattr(settings, 'PORT', None)
-    or CONFIG.get_config('server', 'port')
+    or CONFIG.get_config('server', 'port')  # type: ignore
     or 5000
 )
 debug(PORT=PORT)
@@ -190,7 +191,7 @@ if database:
         # Take config from Settings.co, Settings.ini, App.config, or ENV
         db_type = (
             getattr(settings, 'DB_TYPE', None)
-            or CONFIG.get_config('database', 'type')
+            or CONFIG.get_config('database', 'type')  # type: ignore
             or app.config.get('DB_TYPE')
             or os.getenv('DB_TYPE')
             or 'sqlite'
@@ -198,7 +199,7 @@ if database:
 
         db_path = (
             getattr(settings, 'DB_PATH', None)
-            or CONFIG.get_config('database', 'path')
+            or CONFIG.get_config('database', 'path')  # type: ignore
             or app.config.get('DB_PATH')
             or os.getenv('DB_PATH')
             or f"{BASE_DIR}/pypihub.db"
@@ -206,7 +207,7 @@ if database:
 
         db_name = (
             getattr(settings, 'DB_NAME', None)
-            or CONFIG.get_config('database', 'name')
+            or CONFIG.get_config('database', 'name')  # type: ignore
             or app.config.get('DB_NAME')
             or os.getenv('DB_NAME')
             or 'pypihub'
@@ -214,7 +215,7 @@ if database:
 
         db_user = (
             getattr(settings, 'DB_USERNAME', None)
-            or CONFIG.get_config('database', 'username')
+            or CONFIG.get_config('database', 'username')  # type: ignore
             or app.config.get('DB_USERNAME')
             or os.getenv('DB_USERNAME')
             or ''
@@ -222,7 +223,7 @@ if database:
 
         db_pass = (
             getattr(settings, 'DB_PASSWORD', None)
-            or CONFIG.get_config('database', 'password')
+            or CONFIG.get_config('database', 'password')  # type: ignore
             or app.config.get('DB_PASSWORD')
             or os.getenv('DB_PASSWORD')
             or ''
@@ -230,7 +231,7 @@ if database:
 
         db_host = (
             getattr(settings, 'DB_HOST', None)
-            or CONFIG.get_config('database', 'host')
+            or CONFIG.get_config('database', 'host')  # type: ignore
             or app.config.get('DB_HOST')
             or os.getenv('DB_HOST')
             or 'localhost'
@@ -238,7 +239,7 @@ if database:
 
         db_port = (
             getattr(settings, 'DB_PORT', None)
-            or CONFIG.get_config('database', 'port')
+            or CONFIG.get_config('database', 'port')  # type: ignore
             or app.config.get('DB_PORT')
             or os.getenv('DB_PORT')
         )
@@ -300,10 +301,12 @@ def index_usage():
 def index():
     packages = os.listdir(LOCAL_PKG_DIR)
     debug(len_packages = len(packages))
-    logger.notice(f"len(packages): {len(packages)}")
+    logger.notice(f"len(packages): {len(packages)}")  # type: ignore
     return render_template_string(index_usage() + '<br/><br/>' + '<h1>Local Packages</h1><ul>{% for p in pkgs %}<li><a href="/simple/{{p}}/">{{p}}</a></li>{% endfor %}</ul>', pkgs=packages)
 
 def check_auth(username, password):
+    logger.warning(f"username: {username}")
+    logger.warning(f"password: {password}")
     if not username or not password:
         logger.warning("Username or password is empty")
         return False
@@ -311,19 +314,24 @@ def check_auth(username, password):
         try:
             with SessionLocal() as db:
                 user = db.query(User).filter_by(username=username).first()
+                logger.warning(f"user.username: {user.username}")  # type: ignore
+                logger.warning(f"user.password: {user.password}")  # type: ignore
                 if user and check_password(password, user.password):
                     return True
                 logger.warning("Invalid username or password (DB)")
                 return False
-        except SQLAlchemyError as e:
+        except SQLAlchemyError as e:  # type: ignore
             logger.error(f"Database error during authentication: {e}")
+            if CONFIG.get_config('env', 'development', False):  # type: ignore
+                logger.exception(e)
             return False
-    logger.emergency("run auth without use database")
+    logger.emergency("run auth without use database")  # type: ignore
     # Settings.auths must be a list of tuple/list: [("user", "pass"), ...]
-    auths = getattr(settings, 'AUTHS', None) or CONFIG.get_config_as_list('auths', 'users')
+    auths = getattr(settings, 'AUTHS', CONFIG.get_config_as_list('auths', 'users')) # type: ignore
     if not auths or not isinstance(auths, (list, tuple)) or not auths:
         # Default: [('pypihub', 'pypihub')]
-        auths = [('pypihub', 'pypihub')]
+        password = CONFIG.get_config('auths', 'password')  # type: ignore
+        auths = [('pypihub', password or 'pypihub')]
     return (username, password) in auths
 
 def authenticate():
@@ -337,17 +345,24 @@ def authenticate():
 
 def requires_auth(f):
     debug("requires_auth")
-    logger.notice("run requires_auth")
+    logger.notice("run requires_auth")  # type: ignore
     @wraps(f)
     def decorated(*args, **kwargs):
         auth = request.authorization
         debug(auth = auth)
         logger.debug(f"auth: {auth}")
+        logger.debug(f"auth.username: {auth.username if auth else None}")
+        logger.debug(f"auth.password: {auth.password if auth else None}")
+
         try:
-            if not auth or not check_auth(auth.username, auth.password):
+            check = check_auth(auth.username, auth.password)  # type: ignore
+            logger.debug(f"check_auth: {check}")
+            if not auth or not check:
                 return authenticate()
         except Exception as e:
             logger.error(f"Authentication error: {e}")
+            if CONFIG.get_config('env', 'development', False):  # type: ignore
+                logger.exception(e)
             return authenticate()
         return f(*args, **kwargs)
     return decorated
@@ -358,20 +373,31 @@ def upload_package(package):
     file = request.files['file']
     debug(file = file)
     logger.debug(f"file: {file}")
+    logger.debug(f"file.filename: {file.filename}")
+
     save_path = os.path.join(LOCAL_PKG_DIR, package)
     debug(save_path = save_path, is_dir = os.path.isdir(save_path))
     logger.debug(f"save_path: {save_path}, is_dir: {os.path.isdir(save_path)}")
+    
     os.makedirs(save_path, exist_ok=True)
-    file_path = os.path.join(save_path, file.filename)
-    debug(file_path = file_path)
-    logger.debug(f"file_path: {file_path}")
-    file.save(file_path)
+    file_path = os.path.join(save_path, file.filename)  # type: ignore
+    debug(file_path = file_path)  # type: ignore
+    logger.debug(f"file_path: {file_path}")  # type: ignore
+    file.save(file_path)  # type: ignore
     logger.info(f"Uploaded {file.filename} to {file_path}")
+
     user_id = session.get('user_id')
+    logger.warning(f"user_id: {user_id}")
+    logger.debug(f"database: {database}")
+    logger.debug(f"request.authorization: {request.authorization}")
+
     if database:
         if not user_id and request.authorization and database:
             with SessionLocal() as db2:
                 user = db2.query(User).filter_by(username=request.authorization.username).first()
+                logger.debug(f"user: {user}")
+                logger.debug(f"user.id: {user.id}")  # type: ignore
+
                 if user: user_id = user.id
         with SessionLocal() as db:
             db.add(Package(name=package, source='upload', user_id=user_id))
@@ -390,12 +416,13 @@ def twine_upload():
     )
     debug(file = file)
     logger.warning(f"file: {file}")
+
     if not file:
         # Try to take from the first field if any
         if request.files:
             file = next(iter(request.files.values()))
             debug(file = file)
-            logger.notice(f"file: {file}")
+            logger.notice(f"file: {file}")  # type: ignore
         else:
             debug(error = "No file part in request [400]")
             logger.error("No file part in request [400]")
@@ -405,23 +432,27 @@ def twine_upload():
     filename = file.filename
     debug(filename = filename)
     # Extract the name package (simple, can be better)
-    pkg_name = filename.split('-')[0].lower()
+    pkg_name = filename.split('-')[0].lower()  # type: ignore
     debug(pkg_name = pkg_name)
     logger.info(f"pkg_name: {pkg_name}")
+
     save_path = os.path.join(LOCAL_PKG_DIR, pkg_name)
     debug(save_path = save_path)
     logger.info(f"save_path: {save_path}")
     os.makedirs(save_path, exist_ok=True)
-    file_path = os.path.join(save_path, filename)
+    
+    file_path = os.path.join(save_path, filename)  # type: ignore
     debug(file_path = file_path)
     logger.info(f"file_path: {file_path}")
     if os.path.isfile(file_path):
         debug(error = f"File {filename} already exists in {save_path} [409]")
-        logger.error(f"File {filename} already exists in {save_path} [409]")
+        logger.warning(f"File {filename} already exists in {save_path} [409]")
         # return jsonify({"error": f"File {filename} already exists"}), 409
         return Response("File already exists", status=400, content_type="text/plain")
+
     file.save(file_path)
     logger.info(f"Uploaded {file.filename} to {file_path} (via twine)")
+    
     return 'OK', 200
 
 @app.route('/packages/<package>/<filename>')
@@ -429,13 +460,14 @@ def serve_package(package, filename):
     local_path = os.path.join(LOCAL_PKG_DIR, package)
     debug(local_path = local_path)
     logger.debug(f"local_path: {local_path}")
+    
     return send_from_directory(local_path, filename)
 
 @app.route('/cache/<package>/<filename>')
 def serve_cached(package, filename):
     cache_path = os.path.join(CACHE_DIR, package)
     debug(cache_path = cache_path)
-    logger.notice(f"cache_path: {cache_path}")
+    logger.notice(f"cache_path: {cache_path}")  # type: ignore
     os.makedirs(cache_path, exist_ok=True)
     file_path = os.path.join(cache_path, filename)
     debug(file_path = file_path, is_file = os.path.isfile(file_path))
@@ -448,7 +480,7 @@ def serve_cached(package, filename):
     # Find the URL File in Pypi Simple Index
     r = requests.get(f"{PYPI_SIMPLE_URL}/{package}/")
     debug(requests_status_code = r.status_code)
-    logger.notice(f"requests.get status_code: {r.status_code}")
+    logger.notice(f"requests.get status_code: {r.status_code}")  # type: ignore
     if r.status_code != 200:
         debug(error = "Package not found on PyPI [404]")
         logger.error("Package not found on PyPI [404]")
@@ -520,7 +552,7 @@ def simple_index(package):
     # Fetch from PyPI (hanya generate link, TIDAK download)
     r = requests.get(f"{PYPI_SIMPLE_URL}/{package}/")
     debug(requests_status_code = r.status_code)
-    logger.notice(f"requests.get status_code: {r.status_code}")
+    logger.notice(f"requests.get status_code: {r.status_code}")  # type: ignore
     if r.status_code == 200:
         soup = BeautifulSoup(r.text, 'html.parser')
         for a in soup.find_all('a'):
@@ -580,7 +612,7 @@ def create_user_cli(username=None, password=None):
             if user:
                 # If user exists and password is provided, update password
                 if password:
-                    user.password = hash_password(password)
+                    user.password = hash_password(password)  # type: ignore
                     db.commit()
                     console.print(f"\n ⚠️ [bold #FFFF00]Password updated for user '{username}'.[/]")
                 else:
@@ -615,8 +647,8 @@ def version():
         if version_file.is_file():
             import importlib.util
             spec = importlib.util.spec_from_file_location("version", str(version_file))
-            version_module = importlib.util.module_from_spec(spec)
-            spec.loader.exec_module(version_module)
+            version_module = importlib.util.module_from_spec(spec)  # type: ignore
+            spec.loader.exec_module(version_module)  # type: ignore
             if hasattr(version_module, 'version'):
                 return f"[black on #00FFFF]{str(version_module.version)}[/]"
             break  # break here is not necessary, as return already exits the function
@@ -723,6 +755,12 @@ def usage():
         action='store_true',
         help='Add a new user (only works with user command, requires username and password)'
     )
+    
+    parser.add_argument(
+        '--debug',
+        action='store_true',
+        help='Enable debug mode (for development purposes only)'
+    )
 
     if len(sys.argv) == 1:
         parser.print_help()
@@ -784,7 +822,7 @@ def usage():
         app.config['TESTING'] = False
         app.config['SECRET_KEY'] = 'your_secret_key'  # Set a secret key for session management
         debug(f"start server on {app.config['HOST']}:{app.config['PORT']}")    
-        logger.notice(f"start server on {app.config['HOST']}:{app.config['PORT']}")
+        logger.notice(f"start server on {app.config['HOST']}:{app.config['PORT']}")  # type: ignore
 
         app.run(
             host=args.host,
