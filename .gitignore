@@ -28,3 +28,6 @@ dist*/
 # Added entries (2 items)
 pypihub1.png
 dev.ini
+
+# Added entries (1 items)
+*.sha256
