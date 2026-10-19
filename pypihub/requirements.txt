@@ -1,0 +1,10 @@
+bcrypt
+requests
+bs4
+configset
+flask
+importlib
+pydebugger
+rich
+rich_argparse
+sqlalchemy
