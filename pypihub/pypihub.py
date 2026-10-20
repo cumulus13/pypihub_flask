@@ -30,6 +30,8 @@ For commercial licensing options, contact: cumulus13@gmail.com
 import os
 import sys
 import logging
+import secrets
+from packaging.utils import canonicalize_name
 try:
     from . import logger as Logger
 except:
@@ -43,7 +45,7 @@ logger = Logger.setup_logging()
 # logger = logging.getLogger(__name__)
 
 import requests
-from flask import Flask, send_from_directory, request, render_template_string, abort, Response, jsonify, session#, redirect, url_for
+from flask import Flask, send_from_directory, request, abort, Response, jsonify, session#, redirect, url_for
 from bs4 import BeautifulSoup
 from pydebugger.debug import debug
 from configset import configset
@@ -66,6 +68,11 @@ if (Path(__file__).parent / 'database.py').is_file():
         import database
 else:
     database = None
+
+try:
+    from . import web as web_ui
+except ImportError:
+    import web as web_ui
 
 from rich.console import Console
 from rich_argparse import RichHelpFormatter, _lazy_rich as rr
@@ -102,6 +109,11 @@ class settings:
 settings = settings()  # type: ignore
 
 app = Flask(__name__)
+
+# Trust X-Forwarded-* headers only when explicitly asked to (reverse proxy in front).
+if str(os.getenv('PYPIHUB_TRUST_PROXY', '')).lower() in ('1', 'true', 'yes', 'on'):
+    from werkzeug.middleware.proxy_fix import ProxyFix
+    app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1, x_prefix=1)  # type: ignore
 
 CONFIGFILE = (
     os.getenv('CONFIGFILE')
@@ -178,6 +190,19 @@ print("\n")
 
 os.makedirs(LOCAL_PKG_DIR, exist_ok=True)
 os.makedirs(CACHE_DIR, exist_ok=True)
+
+SECRET_KEY = os.getenv('SECRET_KEY') or getattr(settings, 'SECRET_KEY', None)
+if not SECRET_KEY:
+    SECRET_KEY = secrets.token_hex(32)
+    logger.warning(
+        "No SECRET_KEY configured (environment variable SECRET_KEY or settings.SECRET_KEY). "
+        "Using a random key for this process: sign-in sessions will not survive a restart "
+        "and are not shared between worker processes."
+    )
+app.config['SECRET_KEY'] = SECRET_KEY
+app.config['LOCAL_PKG_DIR'] = LOCAL_PKG_DIR
+app.config['CACHE_DIR'] = CACHE_DIR
+web_ui.init_app(app)
 
 if database:
     from sqlalchemy import create_engine
@@ -282,31 +307,7 @@ if database:
             logger.error(f"Password check error: {e}")
             return False
 
-def index_usage():
-    return f"""
-    <h1>PyPihub - Local PyPI Server</h1>
-    <p>Upload packages to your local PyPI server.</p>
-    <h2>Usage</h2>
-    <ul>
-        <li>Upload a package: <code>POST /upload/&lt;package&gt;/</code> with file in form-data under 'file'</li>
-        <li><i>twine</i> supported</li>
-        <li>Access local packages: <code>/</code></li>
-        <li>Access package files: <code>/packages/&lt;package&gt;/&lt;filename&gt;</code></li>
-        <li>Access cached files: <code>/cache/&lt;package&gt;/&lt;filename&gt;</code></li>
-        <li>Simple index for a package: <code>/simple/&lt;package&gt;/</code></li>
-    </ul>
-    """
-
-@app.route('/')
-def index():
-    packages = os.listdir(LOCAL_PKG_DIR)
-    debug(len_packages = len(packages))
-    logger.notice(f"len(packages): {len(packages)}")  # type: ignore
-    return render_template_string(index_usage() + '<br/><br/>' + '<h1>Local Packages</h1><ul>{% for p in pkgs %}<li><a href="/simple/{{p}}/">{{p}}</a></li>{% endfor %}</ul>', pkgs=packages)
-
 def check_auth(username, password):
-    logger.warning(f"username: {username}")
-    logger.warning(f"password: {password}")
     if not username or not password:
         logger.warning("Username or password is empty")
         return False
@@ -314,8 +315,6 @@ def check_auth(username, password):
         try:
             with SessionLocal() as db:
                 user = db.query(User).filter_by(username=username).first()
-                logger.warning(f"user.username: {user.username}")  # type: ignore
-                logger.warning(f"user.password: {user.password}")  # type: ignore
                 if user and check_password(password, user.password):
                     return True
                 logger.warning("Invalid username or password (DB)")
@@ -349,10 +348,8 @@ def requires_auth(f):
     @wraps(f)
     def decorated(*args, **kwargs):
         auth = request.authorization
-        debug(auth = auth)
-        logger.debug(f"auth: {auth}")
+        debug(auth_user = auth.username if auth else None)
         logger.debug(f"auth.username: {auth.username if auth else None}")
-        logger.debug(f"auth.password: {auth.password if auth else None}")
 
         try:
             check = check_auth(auth.username, auth.password)  # type: ignore
@@ -389,7 +386,6 @@ def upload_package(package):
     user_id = session.get('user_id')
     logger.warning(f"user_id: {user_id}")
     logger.debug(f"database: {database}")
-    logger.debug(f"request.authorization: {request.authorization}")
 
     if database:
         if not user_id and request.authorization and database:
@@ -402,6 +398,7 @@ def upload_package(package):
         with SessionLocal() as db:
             db.add(Package(name=package, source='upload', user_id=user_id))
             db.commit()
+    web_ui.invalidate_cache()
     return 'Uploaded', 200
 
 @app.route('/upload/', methods=['POST'])
@@ -453,6 +450,7 @@ def twine_upload():
     file.save(file_path)
     logger.info(f"Uploaded {file.filename} to {file_path} (via twine)")
     
+    web_ui.invalidate_cache()
     return 'OK', 200
 
 @app.route('/packages/<package>/<filename>')
@@ -525,12 +523,35 @@ def serve_cached(package, filename):
     response.headers['Content-Disposition'] = f'attachment; filename={filename}'
     return response
 
+def resolve_package_dir(root, package):
+    """Name of the directory in ``root`` that holds ``package``.
+
+    pip asks for the PEP 503 normalised name (``my-pkg``) while twine uploads create the
+    directory from the file name (``my_pkg``). Fall back to the requested name when no
+    directory matches, which is what a first-time cache fill needs.
+    """
+    if package in ('.', '..'):
+        abort(404, description="Package not found")
+    if os.path.isdir(os.path.join(root, package)):
+        return package
+    wanted = canonicalize_name(package)
+    try:
+        for name in sorted(os.listdir(root)):
+            if canonicalize_name(name) == wanted and os.path.isdir(os.path.join(root, name)):
+                return name
+    except OSError:
+        pass
+    return package
+
+
 @app.route('/simple/<package>/')
 def simple_index(package):
-    local_path = os.path.join(LOCAL_PKG_DIR, package)
+    local_name = resolve_package_dir(LOCAL_PKG_DIR, package)
+    cache_name = resolve_package_dir(CACHE_DIR, package)
+    local_path = os.path.join(LOCAL_PKG_DIR, local_name)
     debug(local_path = local_path)
     logger.debug(f"local_path: {local_path}")
-    cached_path = os.path.join(CACHE_DIR, package)
+    cached_path = os.path.join(CACHE_DIR, cache_name)
     debug(cached_path = cached_path)
     logger.debug(f"cached_path: {cached_path}")
     os.makedirs(cached_path, exist_ok=True)
@@ -540,13 +561,13 @@ def simple_index(package):
     # Local files
     if os.path.exists(local_path):
         for f in os.listdir(local_path):
-            links.append(f'<a href="/packages/{package}/{f}">{f}</a>')
+            links.append(f'<a href="/packages/{local_name}/{f}">{f}</a>')
             found = True
 
     # Cached files
     if os.path.exists(cached_path):
         for f in os.listdir(cached_path):
-            links.append(f'<a href="/cache/{package}/{f}">{f}</a>')
+            links.append(f'<a href="/cache/{cache_name}/{f}">{f}</a>')
             found = True
 
     # Fetch from PyPI (hanya generate link, TIDAK download)
@@ -566,7 +587,7 @@ def simple_index(package):
                 hash_fragment = href[href.index('#'):]
             # If not in local/cache, add link to/cache/with hash
             if not os.path.exists(os.path.join(local_path, filename)) and not os.path.exists(os.path.join(cached_path, filename)):
-                links.append(f'<a href="/cache/{package}/{filename}{hash_fragment}">{filename}</a>')
+                links.append(f'<a href="/cache/{cache_name}/{filename}{hash_fragment}">{filename}</a>')
                 found = True
     else:
         if not found:
@@ -820,7 +841,6 @@ def usage():
         app.config['DEBUG'] = True
         app.config['ENV'] = 'development'
         app.config['TESTING'] = False
-        app.config['SECRET_KEY'] = 'your_secret_key'  # Set a secret key for session management
         debug(f"start server on {app.config['HOST']}:{app.config['PORT']}")    
         logger.notice(f"start server on {app.config['HOST']}:{app.config['PORT']}")  # type: ignore
 

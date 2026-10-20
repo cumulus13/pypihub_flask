@@ -24,19 +24,19 @@ setup(
     include_package_data=True,
     entry_points={
         "console_scripts": [
-            "pypihub = pypihub:usage",
+            "pypihub = pypihub.pypihub:usage",
         ],
     },
     install_requires=[
         "requests",
         "beautifulsoup4",
-        "pydebugger",
-        "rich",
+        "pydebugger @ git+https://github.com/cumulus13/pydebugger2",
+        "rich @ git+https://github.com/cumulus13/rich",
         "rich-argparse",
         "configset",
     ],
     extras_require={
-        "flask": ["Flask"],
+        "flask": ["Flask", "SQLAlchemy", "bcrypt", "packaging>=20.9"],
         "mysql": ["SQLAlchemy", "mysqlclient"],
         "postgres": ["SQLAlchemy", "psycopg2"],
         "bcrypt": ["bcrypt"],
@@ -51,6 +51,6 @@ setup(
         "Topic :: Software Development :: Libraries",
         "Topic :: Internet :: WWW/HTTP :: Indexing/Search",
     ],
-    python_requires='>=3.7',
+    python_requires='>=3.10',
     license="LGPL-3.0-or-later",
 )

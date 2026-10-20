@@ -1,0 +1,17 @@
+{% macro icon(name, class='') -%}
+<svg class="icon {{ class }}" aria-hidden="true" focusable="false"><use href="#i-{{ name }}"/></svg>
+{%- endmacro %}
+
+{% macro copy_button(target) -%}
+<button type="button" class="copy" data-copy-target="{{ target }}">
+  <svg class="icon copy__icon" aria-hidden="true" focusable="false"><use href="#i-clipboard"/></svg>
+  <svg class="icon copy__done" aria-hidden="true" focusable="false"><use href="#i-check2"/></svg>
+  <span class="copy__label">Copy</span>
+</button>
+{%- endmacro %}
+
+{% macro source_marks(sources) -%}
+{% for s in sources -%}
+<span class="src" title="{{ s|capitalize }}"><span class="led led--{{ s }}" aria-hidden="true"></span><span class="src__text">{{ s|capitalize }}</span></span>
+{%- endfor %}
+{%- endmacro %}

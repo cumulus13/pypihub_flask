@@ -1,0 +1,60 @@
+{% extends "base.html" %}
+{% from "_macros.html" import icon, copy_button, source_marks %}
+{% block title %}{{ pkg.name }} - PyPihub{% endblock %}
+{% block main %}
+{% set cmd_base = 'pip install --index-url ' ~ pip_index_url ~ ((' --trusted-host ' ~ trusted_host) if trusted_host else '') %}
+<section class="hero hero--package">
+  <div class="container-xl">
+    <p class="crumbs"><a href="{{ url_for('pypihub_ui.index') }}">{{ icon('arrow-left') }} All packages</a></p>
+    <h1 class="hero__title hero__title--package">{{ pkg.name }}{% if pkg.latest %} <span class="pkg-ver">{{ pkg.latest }}</span>{% endif %}</h1>
+    <p class="hero__lede">
+      {{ pkg.files|length }} file{{ '' if pkg.files|length == 1 else 's' }}, {{ pkg.total_size|filesize }} on this server.
+      <span class="pkg-sources">{{ source_marks(pkg.sources) }}</span>
+    </p>
+    <div class="cmd cmd--prompt">
+      <code id="cmd-main">{{ cmd_base }} {{ pkg.name }}</code>
+      {{ copy_button('cmd-main') }}
+    </div>
+  </div>
+</section>
+
+<section class="index" aria-labelledby="files-title">
+  <div class="container-xl">
+    <h2 id="files-title" class="index__title">Files</h2>
+    <div class="table-wrap">
+      <table class="pkgs files">
+        <caption class="visually-hidden">Files of {{ pkg.name }} stored on this server</caption>
+        <thead>
+          <tr>
+            <th scope="col" class="c-name">Filename</th>
+            <th scope="col" class="c-type">Type</th>
+            <th scope="col" class="c-source">Source</th>
+            <th scope="col" class="c-size num">Size</th>
+            <th scope="col" class="c-updated num">Added</th>
+            <th scope="col" class="c-get"><span class="visually-hidden">Download</span></th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for f in pkg.sorted_files() %}
+          <tr>
+            <th scope="row" class="c-name file-name">{{ f.filename }}</th>
+            <td class="c-type">{{ {'wheel': 'Wheel', 'sdist': 'Source', 'other': 'Other'}[f.kind] }}</td>
+            <td class="c-source">{{ source_marks([f.source]) }}</td>
+            <td class="c-size num">{{ f.size|filesize }}</td>
+            <td class="c-updated num"><time datetime="{{ f.mtime|utc_iso }}" title="{{ f.mtime|utc_text }}">{{ f.mtime|ago }}</time></td>
+            <td class="c-get">
+              <a class="dl" href="{{ url_for('serve_package' if f.source == 'local' else 'serve_cached', package=f.directory, filename=f.filename) }}" download>
+                {{ icon('download') }}<span class="visually-hidden">Download {{ f.filename }}</span>
+              </a>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% if 'cached' in pkg.sources %}
+    <p class="note">Only files already stored on this server are listed. Other releases are fetched from PyPI when pip asks for them.</p>
+    {% endif %}
+  </div>
+</section>
+{% endblock %}

@@ -1,0 +1,62 @@
+<!doctype html>
+<html lang="en" data-bs-theme="light">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light dark">
+  <meta name="theme-color" content="#f3f5f9" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#0e1424" media="(prefers-color-scheme: dark)">
+  <meta name="description" content="A local Python package index with PyPI caching and uploads.">
+  <title>{% block title %}PyPihub{% endblock %}</title>
+  <link rel="icon" type="image/png" sizes="32x32" href="{{ static_url('img/favicon-32.png') }}">
+  <link rel="apple-touch-icon" href="{{ static_url('img/apple-touch-icon.png') }}">
+  <script src="{{ static_url('js/theme.js') }}"></script>
+  <link rel="stylesheet" href="{{ static_url('vendor/bootstrap/bootstrap.min.css') }}">
+  <link rel="stylesheet" href="{{ static_url('css/pypihub.css') }}">
+</head>
+<body>
+{% include "_sprite.html" %}
+{% from "_macros.html" import icon %}
+<a class="skip-link" href="#main">Skip to content</a>
+
+<header class="site-header">
+  <div class="container-xl site-header__inner">
+    <a class="brand" href="{{ url_for('pypihub_ui.index') }}">
+      <img src="{{ static_url('img/logo-72.png') }}" width="36" height="36" alt="">
+      <span>PyPihub</span>
+    </a>
+    <nav class="site-nav" aria-label="Main">
+      <a class="site-nav__optional" href="{{ url_for('pypihub_ui.index') }}"{% if request.endpoint == 'pypihub_ui.index' %} aria-current="page"{% endif %}>Packages</a>
+      <a href="{{ url_for('pypihub_ui.index') }}#setup">Use this index</a>
+      <a class="site-nav__optional" href="{{ repo_url }}" rel="noopener">GitHub</a>
+      <div class="dropdown theme-menu">
+        <button class="icon-btn dropdown-toggle" type="button" data-bs-toggle="dropdown" aria-expanded="false" aria-label="Color theme">
+          {{ icon('circle-half', 'theme-icon theme-icon--auto') }}
+          {{ icon('sun', 'theme-icon theme-icon--light') }}
+          {{ icon('moon-stars', 'theme-icon theme-icon--dark') }}
+        </button>
+        <ul class="dropdown-menu dropdown-menu-end">
+          <li><button class="dropdown-item" type="button" data-theme-choice="auto">{{ icon('circle-half') }} System</button></li>
+          <li><button class="dropdown-item" type="button" data-theme-choice="light">{{ icon('sun') }} Light</button></li>
+          <li><button class="dropdown-item" type="button" data-theme-choice="dark">{{ icon('moon-stars') }} Dark</button></li>
+        </ul>
+      </div>
+    </nav>
+  </div>
+</header>
+
+<main id="main">
+{% block main %}{% endblock %}
+</main>
+
+<footer class="site-footer">
+  <div class="container-xl">
+    <p>PyPihub {{ ph_version }} is free software under the LGPL-3.0. <a href="{{ repo_url }}" rel="noopener">Source code</a></p>
+  </div>
+</footer>
+
+<div class="visually-hidden" id="live-status" role="status" aria-live="polite"></div>
+<script src="{{ static_url('vendor/bootstrap/bootstrap.bundle.min.js') }}" defer></script>
+<script src="{{ static_url('js/pypihub.js') }}" defer></script>
+</body>
+</html>

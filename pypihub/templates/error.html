@@ -1,0 +1,13 @@
+{% extends "base.html" %}
+{% from "_macros.html" import icon %}
+{% block title %}{{ heading }} - PyPihub{% endblock %}
+{% block main %}
+<section class="hero hero--package">
+  <div class="container-xl">
+    <p class="crumbs"><a href="{{ url_for('pypihub_ui.index') }}">{{ icon('arrow-left') }} All packages</a></p>
+    <h1 class="hero__title hero__title--package">{{ heading }}</h1>
+    <p class="hero__lede">{{ message }}</p>
+    <p class="note">If you expected to find it, search the package list or install it through this index: PyPI packages are fetched and cached on first use.</p>
+  </div>
+</section>
+{% endblock %}

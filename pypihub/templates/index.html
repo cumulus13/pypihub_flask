@@ -1,0 +1,122 @@
+{% extends "base.html" %}
+{% from "_macros.html" import icon, copy_button, source_marks %}
+{% block main %}
+{% set cmd_base = 'pip install --index-url ' ~ pip_index_url ~ ((' --trusted-host ' ~ trusted_host) if trusted_host else '') %}
+
+<section class="hero">
+  <div class="container-xl">
+    <h1 class="hero__title">Python packages, served locally.</h1>
+    <p class="hero__lede">Packages you upload are hosted here. Anything else is fetched from PyPI the first time it is installed, then kept on this server.</p>
+
+    <div class="finder" role="search">
+      <label class="visually-hidden" for="pkg-search">Find a package</label>
+      {{ icon('search', 'finder__icon') }}
+      <input id="pkg-search" class="finder__input" type="search" placeholder="Search or enter a package name"
+             autocomplete="off" autocapitalize="none" spellcheck="false" enterkeyhint="search">
+      <kbd class="finder__hint" aria-hidden="true">/</kbd>
+    </div>
+
+    <div class="cmd cmd--prompt">
+      <code id="cmd-main">{{ cmd_base }} <span class="cmd__pkg" data-cmd-pkg>package-name</span></code>
+      {{ copy_button('cmd-main') }}
+    </div>
+    <p class="cmd__note" data-cmd-note hidden></p>
+  </div>
+</section>
+
+<section class="index" aria-labelledby="index-title">
+  <div class="container-xl">
+    <div class="index__head">
+      <div>
+        <h2 id="index-title" class="index__title">Packages</h2>
+        {% if snapshot.packages %}
+        <p class="index__summary" data-summary data-default="{{ '{:,}'.format(snapshot.packages|length) }} package{{ '' if snapshot.packages|length == 1 else 's' }}, {{ '{:,}'.format(snapshot.total_files) }} file{{ '' if snapshot.total_files == 1 else 's' }}, {{ snapshot.total_size|filesize }} on disk">
+          {{ '{:,}'.format(snapshot.packages|length) }} package{{ '' if snapshot.packages|length == 1 else 's' }}, {{ '{:,}'.format(snapshot.total_files) }} file{{ '' if snapshot.total_files == 1 else 's' }}, {{ snapshot.total_size|filesize }} on disk
+        </p>
+        {% endif %}
+      </div>
+      {% if snapshot.packages %}
+      <div class="seg" role="group" aria-label="Show packages by source">
+        <button type="button" class="seg__btn" data-source-filter="all" aria-pressed="true">All <span class="seg__n">{{ snapshot.packages|length }}</span></button>
+        <button type="button" class="seg__btn" data-source-filter="local" aria-pressed="false">Local <span class="seg__n">{{ snapshot.count('local') }}</span></button>
+        <button type="button" class="seg__btn" data-source-filter="cached" aria-pressed="false">Cached <span class="seg__n">{{ snapshot.count('cached') }}</span></button>
+      </div>
+      {% endif %}
+    </div>
+
+    {% if snapshot.packages %}
+    <div class="table-wrap">
+      <table class="pkgs" data-pkg-table>
+        <caption class="visually-hidden">Packages stored on this server</caption>
+        <thead>
+          <tr>
+            <th scope="col" class="c-name" aria-sort="ascending"><button type="button" class="sort" data-sort="name">Package</button></th>
+            <th scope="col" class="c-version">Version</th>
+            <th scope="col" class="c-source">Source</th>
+            <th scope="col" class="c-files num" aria-sort="none"><button type="button" class="sort" data-sort="files">Files</button></th>
+            <th scope="col" class="c-size num" aria-sort="none"><button type="button" class="sort" data-sort="size">Size</button></th>
+            <th scope="col" class="c-updated num" aria-sort="none"><button type="button" class="sort" data-sort="updated">Updated</button></th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for p in snapshot.packages %}
+          <tr data-key="{{ p.key }}" data-name="{{ p.name }}" data-source="{{ p.sources|join(' ') }}" data-files="{{ p.files|length }}" data-size="{{ p.total_size }}" data-updated="{{ p.updated|int }}">
+            <th scope="row" class="c-name"><a class="pkgs__link" href="{{ url_for('pypihub_ui.project', name=p.key) }}">{{ p.name }}</a></th>
+            <td class="c-version">{{ p.latest or '–' }}</td>
+            <td class="c-source">{{ source_marks(p.sources) }}</td>
+            <td class="c-files num">{{ p.files|length }}</td>
+            <td class="c-size num">{{ p.total_size|filesize }}</td>
+            <td class="c-updated num"><time datetime="{{ p.updated|utc_iso }}" title="{{ p.updated|utc_text }}">{{ p.updated|ago }}</time></td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    <p class="nomatch" data-nomatch hidden></p>
+    {% else %}
+    <div class="empty">
+      {{ icon('inbox', 'empty__icon') }}
+      <h3 class="empty__title">Nothing is stored here yet</h3>
+      <p>Upload a package with twine, or install anything through this index. Packages found on PyPI are cached on first use.</p>
+      <p><a class="btn-ph" href="#setup">See how to use this index</a></p>
+    </div>
+    {% endif %}
+  </div>
+</section>
+
+<section id="setup" class="setup" aria-labelledby="setup-title">
+  <div class="container-xl">
+    <h2 id="setup-title" class="index__title">Use this index</h2>
+    <ul class="tabs nav" role="tablist">
+      <li role="presentation"><button class="tabs__btn active" id="tab-pip" data-bs-toggle="tab" data-bs-target="#pane-pip" type="button" role="tab" aria-controls="pane-pip" aria-selected="true">Install with pip</button></li>
+      <li role="presentation"><button class="tabs__btn" id="tab-twine" data-bs-toggle="tab" data-bs-target="#pane-twine" type="button" role="tab" aria-controls="pane-twine" aria-selected="false">Upload with twine</button></li>
+      <li role="presentation"><button class="tabs__btn" id="tab-curl" data-bs-toggle="tab" data-bs-target="#pane-curl" type="button" role="tab" aria-controls="pane-curl" aria-selected="false">Upload with curl</button></li>
+    </ul>
+    <div class="tab-content">
+      <div class="tab-pane show active" id="pane-pip" role="tabpanel" aria-labelledby="tab-pip" tabindex="0">
+        <p>Point pip at this server once, and every install goes through it.</p>
+        <div class="cmd cmd--prompt"><code id="code-pip-config">pip config set global.index-url {{ pip_index_url }}{% if trusted_host %}
+pip config set global.trusted-host {{ trusted_host }}{% endif %}</code>{{ copy_button('code-pip-config') }}</div>
+        <p>To use it for a single install instead:</p>
+        <div class="cmd cmd--prompt"><code id="code-pip-once">{{ cmd_base }} package-name</code>{{ copy_button('code-pip-once') }}</div>
+      </div>
+      <div class="tab-pane" id="pane-twine" role="tabpanel" aria-labelledby="tab-twine" tabindex="0">
+        <p>Uploads need an account on this server. An administrator can create one with <code class="inline">pypihub user -u NAME</code> on the server.</p>
+        <div class="cmd cmd--prompt"><code id="code-twine">twine upload --repository-url {{ base_url }}/ --username your-username dist/*</code>{{ copy_button('code-twine') }}</div>
+        <p>Or save the server in <code class="inline">~/.pypirc</code> and upload by name:</p>
+        <div class="cmd"><code id="code-pypirc">[distutils]
+index-servers = pypihub
+
+[pypihub]
+repository = {{ base_url }}/
+username = your-username</code>{{ copy_button('code-pypirc') }}</div>
+        <div class="cmd cmd--prompt"><code id="code-twine-name">twine upload --repository pypihub dist/*</code>{{ copy_button('code-twine-name') }}</div>
+      </div>
+      <div class="tab-pane" id="pane-curl" role="tabpanel" aria-labelledby="tab-curl" tabindex="0">
+        <p>Send one file to <code class="inline">/upload/&lt;package&gt;/</code>. curl asks for the password.</p>
+        <div class="cmd cmd--prompt"><code id="code-curl">curl -u your-username -F "file=@dist/package_name-1.0.0-py3-none-any.whl" {{ base_url }}/upload/package-name/</code>{{ copy_button('code-curl') }}</div>
+      </div>
+    </div>
+  </div>
+</section>
+{% endblock %}

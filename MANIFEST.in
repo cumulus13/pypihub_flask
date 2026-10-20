@@ -1,1 +1,4 @@
 include __version__.py
+include LICENSE.md
+recursive-include pypihub/templates *.html
+recursive-include pypihub/static *
