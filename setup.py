@@ -30,8 +30,8 @@ setup(
     install_requires=[
         "requests",
         "beautifulsoup4",
-        "pydebugger @ git+https://github.com/cumulus13/pydebugger2",
-        "rich @ git+https://github.com/cumulus13/rich",
+        "pydebugger",
+        "rich",
         "rich-argparse",
         "configset",
     ],
