@@ -57,7 +57,7 @@ flowchart TB
     S -. "index lookup, file download" .-> X
 ```
 
-[![Architecture 1](https://i.ibb.co.com/nMmXnfLS/architecture1.jpg)](https://i.ibb.co.com/nMmXnfLS/architecture1.jpg)
+[![Architecture 1](https://i.ibb.co/nMmXnfLS/architecture1.jpg)](https://i.ibb.co/nMmXnfLS/architecture1.jpg)
 
 The web interface only reads the two package directories, so it never changes how pip and twine talk to the server.
 
@@ -88,7 +88,7 @@ sequenceDiagram
     end
 ```
 
-[![Architecture 2](https://files.catbox.moe/1rziz3.jpg)](https://files.catbox.moe/1rziz3.jpg)
+[![Architecture 2](https://i.ibb.co/zTgqyw1b/pypihub-architecture2.jpg)](https://i.ibb.co/zTgqyw1b/pypihub-architecture2.jpg)
 
 Files you uploaded are served from `/packages/...` straight from disk and never touch PyPI.
 
@@ -103,7 +103,16 @@ flowchart LR
     PB --> PY[("PyPI<br/>trusted publishing")]
 ```
 
-[![Architecture 3](https://files.catbox.moe/n79353.jpg)](https://files.catbox.moe/n79353.jpg)
+[![Architecture 3](https://i.ibb.co/1G0HxgY4/pypihub-architecture3.jpg)](https://i.ibb.co/1G0HxgY4/pypihub-architecture3.jpg)
+
+<p align="center">
+  <a href="https://i.ibb.co/PZj0xJVv/pypihub-screenshot1.png" target="_blank">
+    <img src="https://i.ibb.co/PZj0xJVv/pypihub-screenshot1.png" width="500" alt="Screenshot 1">
+  </a>
+  <a href="https://i.ibb.co/mVVr09Cs/pypihub-screenshot2.png" target="_blank">
+    <img src="https://i.ibb.co/mVVr09Cs/pypihub-screenshot2.png" width="500" alt="Screenshot 2">
+  </a>
+</p>
 
 
 ## Installation

@@ -349,7 +349,7 @@ def _inject_globals() -> Dict[str, object]:
     def static_url(filename: str) -> str:
         return url_for("static", filename=filename, v=version)
 
-    context: Dict[str, object] = {"ph_version": version, "repo_url": REPO_URL, "static_url": static_url}
+    context: Dict[str, object] = {"ph_version": version, "repo_url": REPO_URL, "static_url": static_url, "author": "Hadi Cahyadi", "email": "cumulus13@gmail.com"}
     context.update(_server_urls())
     return context
 
