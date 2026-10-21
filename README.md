@@ -107,10 +107,10 @@ flowchart LR
 
 <p align="center">
   <a href="https://i.ibb.co/PZj0xJVv/pypihub-screenshot1.png" target="_blank">
-    <img src="https://i.ibb.co/PZj0xJVv/pypihub-screenshot1.png" width="500" alt="Screenshot 1">
+    <img src="https://i.ibb.co/PZj0xJVv/pypihub-screenshot1.png" width="98%" alt="Screenshot 1">
   </a>
   <a href="https://i.ibb.co/mVVr09Cs/pypihub-screenshot2.png" target="_blank">
-    <img src="https://i.ibb.co/mVVr09Cs/pypihub-screenshot2.png" width="500" alt="Screenshot 2">
+    <img src="https://i.ibb.co/mVVr09Cs/pypihub-screenshot2.png" width="98%" alt="Screenshot 2">
   </a>
 </p>
 
