@@ -293,7 +293,12 @@ if database:
 
     engine = create_engine(get_db_url(), echo=False, future=True)
     SessionLocal = sessionmaker(bind=engine)
-    database.Base.metadata.create_all(engine)
+    # database.Base.metadata.create_all(engine)
+    try:
+        database.Base.metadata.create_all(engine)
+    except SQLAlchemyError as e:
+        if "already exists" not in str(e):
+            raise
 
     import bcrypt
 
