@@ -22,3 +22,5 @@ venv
 traceback.log
 pypihub/packages
 pypihub/cache
+*.db
+*.db3
