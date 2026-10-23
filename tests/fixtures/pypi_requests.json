@@ -1,0 +1,444 @@
+{
+ "info": {
+  "author": null,
+  "author_email": "Kenneth Reitz <me@kennethreitz.org>",
+  "bugtrack_url": null,
+  "classifiers": [
+   "Development Status :: 5 - Production/Stable",
+   "Environment :: Web Environment",
+   "Intended Audience :: Developers",
+   "License :: OSI Approved :: Apache Software License",
+   "Natural Language :: English",
+   "Operating System :: OS Independent",
+   "Programming Language :: Python",
+   "Programming Language :: Python :: 3",
+   "Programming Language :: Python :: 3 :: Only",
+   "Programming Language :: Python :: 3.10",
+   "Programming Language :: Python :: 3.11",
+   "Programming Language :: Python :: 3.12",
+   "Programming Language :: Python :: 3.13",
+   "Programming Language :: Python :: 3.14",
+   "Programming Language :: Python :: 3.15",
+   "Programming Language :: Python :: Free Threading :: 2 - Beta",
+   "Programming Language :: Python :: Implementation :: CPython",
+   "Programming Language :: Python :: Implementation :: PyPy",
+   "Topic :: Internet :: WWW/HTTP",
+   "Topic :: Software Development :: Libraries"
+  ],
+  "description": "# Requests\n\n[![Version](https://img.shields.io/pypi/v/requests.svg?maxAge=86400)](https://pypi.org/project/requests/)\n[![Supported Versions](https://img.shields.io/pypi/pyversions/requests.svg)](https://pypi.org/project/requests)\n[![Downloads](https://static.pepy.tech/badge/requests/month)](https://pepy.tech/project/requests)\n[![Contributors](https://img.shields.io/github/contributors/psf/requests.svg)](https://github.com/psf/requests/graphs/contributors)\n[![Documentation](https://readthedocs.org/projects/requests/badge/?version=latest)](https://requests.readthedocs.io)\n\n**Requests** is a simple, yet elegant, HTTP library.\n\n```python\n>>> import requests\n>>> r = requests.get('https://httpbin.org/basic-auth/user/pass', auth=('user', 'pass'))\n>>> r.status_code\n200\n>>> r.headers['content-type']\n'application/json; charset=utf8'\n>>> r.encoding\n'utf-8'\n>>> r.text\n'{\"authenticated\": true, ...'\n>>> r.json()\n{'authenticated': True, ...}\n```\n\nRequests allows you to send HTTP/1.1 requests extremely easily. There\u2019s no need to manually add query strings to your URLs, or to form-encode your `PUT` & `POST` data \u2014 but nowadays, just use the `json` method!\n\nRequests is one of the most downloaded Python packages today, pulling in around `300M downloads / week` \u2014 according to GitHub, Requests is currently [depended upon](https://github.com/psf/requests/network/dependents?package_id=UGFja2FnZS01NzA4OTExNg%3D%3D) by `4,000,000+` repositories.\n\n## Installing Requests and Supported Versions\n\nRequests is available on PyPI:\n\n```console\n$ python -m pip install requests\n```\n\nRequests officially supports Python 3.10+.\n\n## Supported Features & Best\u2013Practices\n\nRequests is ready for the demands of building robust and reliable HTTP\u2013speaking applications, for the needs of today.\n\n- Keep-Alive & Connection Pooling\n- International Domains and URLs\n- Sessions with Cookie Persistence\n- Browser-style TLS/SSL Verification\n- Basic & Digest Authentication\n- Familiar `dict`\u2013like Cookies\n- Automatic Content Decompression and Decoding\n- Multi-part File Uploads\n- SOCKS Proxy Support\n- Connection Timeouts\n- Streaming Downloads\n- Automatic honoring of `.netrc`\n- Chunked HTTP Requests\n\n## Cloning the repository\n\nWhen cloning the Requests repository, you may need to add the `-c\nfetch.fsck.badTimezone=ignore` flag to avoid an error about a bad commit timestamp (see\n[this issue](https://github.com/psf/requests/issues/2690) for more background):\n\n```shell\ngit clone -c fetch.fsck.badTimezone=ignore https://github.com/psf/requests.git\n```\n\nYou can also apply this setting to your global Git config:\n\n```shell\ngit config --global fetch.fsck.badTimezone ignore\n```\n\n---\n\n[![Kenneth Reitz](https://raw.githubusercontent.com/psf/requests/main/ext/kr.png)](https://kennethreitz.org) [![Python Software Foundation](https://raw.githubusercontent.com/psf/requests/main/ext/psf.png)](https://www.python.org/psf)\n",
+  "description_content_type": "text/markdown",
+  "docs_url": null,
+  "download_url": null,
+  "downloads": {
+   "last_day": -1,
+   "last_month": -1,
+   "last_week": -1
+  },
+  "dynamic": [
+   "License-File"
+  ],
+  "home_page": null,
+  "keywords": null,
+  "license": "Apache-2.0",
+  "license_expression": null,
+  "license_files": [
+   "LICENSE",
+   "NOTICE"
+  ],
+  "maintainer": null,
+  "maintainer_email": "Ian Stapleton Cordasco <graffatcolmingov@gmail.com>, Nate Prewitt <nate.prewitt@gmail.com>",
+  "name": "requests",
+  "package_url": "https://pypi.org/project/requests/",
+  "platform": null,
+  "project_url": "https://pypi.org/project/requests/",
+  "project_urls": {
+   "Documentation": "https://requests.readthedocs.io",
+   "Source": "https://github.com/psf/requests"
+  },
+  "provides_extra": [
+   "security",
+   "socks",
+   "use-chardet-on-py3"
+  ],
+  "release_url": "https://pypi.org/project/requests/2.34.2/",
+  "requires_dist": [
+   "charset_normalizer<4,>=2",
+   "idna<4,>=2.5",
+   "urllib3<3,>=1.26",
+   "certifi>=2023.5.7",
+   "PySocks!=1.5.7,>=1.5.6; extra == \"socks\"",
+   "chardet<8,>=3.0.2; extra == \"use-chardet-on-py3\""
+  ],
+  "requires_python": ">=3.10",
+  "summary": "Python HTTP for Humans.",
+  "version": "2.34.2",
+  "yanked": false,
+  "yanked_reason": null
+ },
+ "last_serial": 37059094,
+ "ownership": {},
+ "releases": {
+  "0.0.1": [],
+  "0.2.0": [
+   {
+    "comment_text": "",
+    "core-metadata": false,
+    "digests": {
+     "blake2b_256": "babbdfa0141a32d773c47e4dede1a617c59a23b74dd302e449cf85413fc96bc4",
+     "md5": "637ae94cb6f2f1d9ea9020293055964a",
+     "sha256": "813202ace4d9301a3c00740c700e012fb9f3f8c73ddcfe02ab558a8df6f175fd"
+    },
+    "downloads": -1,
+    "filename": "requests-0.2.0.tar.gz",
+    "has_sig": false,
+    "md5_digest": "637ae94cb6f2f1d9ea9020293055964a",
+    "packagetype": "sdist",
+    "python_version": "source",
+    "requires_python": null,
+    "size": 5533,
+    "upload_time": "2011-02-14T08:49:42",
+    "upload_time_iso_8601": "2011-02-14T08:49:42.641660Z",
+    "url": "https://files.pythonhosted.org/packages/ba/bb/dfa0141a32d773c47e4dede1a617c59a23b74dd302e449cf85413fc96bc4/requests-0.2.0.tar.gz",
+    "yanked": false,
+    "yanked_reason": null
+   }
+  ],
+  "2.33.0": [
+   {
+    "comment_text": null,
+    "core-metadata": {
+     "sha256": "0cc0fa6e89be83cfa1777957519e3fffe78d1a79b30561934d1e4384fb177711"
+    },
+    "digests": {
+     "blake2b_256": "565dc814546c2333ceea4ba42262d8c4d55763003e767fa169adc693bd524478",
+     "md5": "22daaf63bcca957bce99d803119a355d",
+     "sha256": "3324635456fa185245e24865e810cecec7b4caf933d7eb133dcde67d48cee69b"
+    },
+    "downloads": -1,
+    "filename": "requests-2.33.0-py3-none-any.whl",
+    "has_sig": false,
+    "md5_digest": "22daaf63bcca957bce99d803119a355d",
+    "packagetype": "bdist_wheel",
+    "python_version": "py3",
+    "requires_python": ">=3.10",
+    "size": 65017,
+    "upload_time": "2026-03-25T15:10:40",
+    "upload_time_iso_8601": "2026-03-25T15:10:40.382036Z",
+    "url": "https://files.pythonhosted.org/packages/56/5d/c814546c2333ceea4ba42262d8c4d55763003e767fa169adc693bd524478/requests-2.33.0-py3-none-any.whl",
+    "yanked": false,
+    "yanked_reason": null
+   },
+   {
+    "comment_text": null,
+    "core-metadata": false,
+    "digests": {
+     "blake2b_256": "34648860370b167a9721e8956ae116825caff829224fbca0ca6e7bf8ddef8430",
+     "md5": "662bf03e3af75028d5a7f36b7e25ad10",
+     "sha256": "c7ebc5e8b0f21837386ad0e1c8fe8b829fa5f544d8df3b2253bff14ef29d7652"
+    },
+    "downloads": -1,
+    "filename": "requests-2.33.0.tar.gz",
+    "has_sig": false,
+    "md5_digest": "662bf03e3af75028d5a7f36b7e25ad10",
+    "packagetype": "sdist",
+    "python_version": "source",
+    "requires_python": ">=3.10",
+    "size": 134232,
+    "upload_time": "2026-03-25T15:10:41",
+    "upload_time_iso_8601": "2026-03-25T15:10:41.586809Z",
+    "url": "https://files.pythonhosted.org/packages/34/64/8860370b167a9721e8956ae116825caff829224fbca0ca6e7bf8ddef8430/requests-2.33.0.tar.gz",
+    "yanked": false,
+    "yanked_reason": null
+   }
+  ],
+  "2.33.1": [
+   {
+    "comment_text": null,
+    "core-metadata": {
+     "sha256": "a984181a5ecc84a63e6f0b60eb575890ffe34426e5351955d342aa2b3147b823"
+    },
+    "digests": {
+     "blake2b_256": "d78e7540e8a2036f79a125c1d2ebadf69ed7901608859186c856fa0388ef4197",
+     "md5": "8dc07a23ed07c964a3f87cef906b8988",
+     "sha256": "4e6d1ef462f3626a1f0a0a9c42dd93c63bad33f9f1c1937509b8c5c8718ab56a"
+    },
+    "downloads": -1,
+    "filename": "requests-2.33.1-py3-none-any.whl",
+    "has_sig": false,
+    "md5_digest": "8dc07a23ed07c964a3f87cef906b8988",
+    "packagetype": "bdist_wheel",
+    "python_version": "py3",
+    "requires_python": ">=3.10",
+    "size": 64947,
+    "upload_time": "2026-03-30T16:09:13",
+    "upload_time_iso_8601": "2026-03-30T16:09:13.830020Z",
+    "url": "https://files.pythonhosted.org/packages/d7/8e/7540e8a2036f79a125c1d2ebadf69ed7901608859186c856fa0388ef4197/requests-2.33.1-py3-none-any.whl",
+    "yanked": false,
+    "yanked_reason": null
+   },
+   {
+    "comment_text": null,
+    "core-metadata": false,
+    "digests": {
+     "blake2b_256": "5fa498b9c7c6428a668bf7e42ebb7c79d576a1c3c1e3ae2d47e674b468388871",
+     "md5": "ebc3b42b51c6245524345d170e5d4c50",
+     "sha256": "18817f8c57c6263968bc123d237e3b8b08ac046f5456bd1e307ee8f4250d3517"
+    },
+    "downloads": -1,
+    "filename": "requests-2.33.1.tar.gz",
+    "has_sig": false,
+    "md5_digest": "ebc3b42b51c6245524345d170e5d4c50",
+    "packagetype": "sdist",
+    "python_version": "source",
+    "requires_python": ">=3.10",
+    "size": 134120,
+    "upload_time": "2026-03-30T16:09:15",
+    "upload_time_iso_8601": "2026-03-30T16:09:15.531306Z",
+    "url": "https://files.pythonhosted.org/packages/5f/a4/98b9c7c6428a668bf7e42ebb7c79d576a1c3c1e3ae2d47e674b468388871/requests-2.33.1.tar.gz",
+    "yanked": false,
+    "yanked_reason": null
+   }
+  ],
+  "2.34.0": [
+   {
+    "comment_text": null,
+    "core-metadata": {
+     "sha256": "eb8c3ec579b67270205eb72c109ea0eb8f7c771dd5660a92f134484d99e87ab9"
+    },
+    "digests": {
+     "blake2b_256": "efe6e300fce5fe83c30520607a015dabd985df3251e188d234bfe9492e17a389",
+     "md5": "b21e8098dbad94095472420205e19612",
+     "sha256": "917520a21b767485ce7c588f4ebb917c436b24a31231b44228715eaeb5a52c60"
+    },
+    "downloads": -1,
+    "filename": "requests-2.34.0-py3-none-any.whl",
+    "has_sig": false,
+    "md5_digest": "b21e8098dbad94095472420205e19612",
+    "packagetype": "bdist_wheel",
+    "python_version": "py3",
+    "requires_python": ">=3.10",
+    "size": 73021,
+    "upload_time": "2026-05-11T19:29:49",
+    "upload_time_iso_8601": "2026-05-11T19:29:49.923155Z",
+    "url": "https://files.pythonhosted.org/packages/ef/e6/e300fce5fe83c30520607a015dabd985df3251e188d234bfe9492e17a389/requests-2.34.0-py3-none-any.whl",
+    "yanked": false,
+    "yanked_reason": null
+   },
+   {
+    "comment_text": null,
+    "core-metadata": false,
+    "digests": {
+     "blake2b_256": "43b87a707d60fea4c49094e40262cc0e2ca6c768cca21587e34d3f705afec47e",
+     "md5": "5527a2698bdf243cfde42e7129bbfa7e",
+     "sha256": "7d62fe92f50eb82c529b0916bb445afa1531a566fc8f35ffdc64446e771b856a"
+    },
+    "downloads": -1,
+    "filename": "requests-2.34.0.tar.gz",
+    "has_sig": false,
+    "md5_digest": "5527a2698bdf243cfde42e7129bbfa7e",
+    "packagetype": "sdist",
+    "python_version": "source",
+    "requires_python": ">=3.10",
+    "size": 142436,
+    "upload_time": "2026-05-11T19:29:51",
+    "upload_time_iso_8601": "2026-05-11T19:29:51.717818Z",
+    "url": "https://files.pythonhosted.org/packages/43/b8/7a707d60fea4c49094e40262cc0e2ca6c768cca21587e34d3f705afec47e/requests-2.34.0.tar.gz",
+    "yanked": false,
+    "yanked_reason": null
+   }
+  ],
+  "2.34.0.dev1": [
+   {
+    "comment_text": null,
+    "core-metadata": {
+     "sha256": "29cb58354e58cd346c2ff8896a5631f002b6638867e7860ea15023d8c2b36665"
+    },
+    "digests": {
+     "blake2b_256": "0c53ddb8b8fa96367976cf52bb0610ffd529bd7d2795b2e4c1724724d071718c",
+     "md5": "afb4fd35a45cf122bcd2db780231a085",
+     "sha256": "c8749aeb3c4b204f80fd288f7507378c9afe66a3f189fb43fd77ea33e74d7564"
+    },
+    "downloads": -1,
+    "filename": "requests-2.34.0.dev1-py3-none-any.whl",
+    "has_sig": false,
+    "md5_digest": "afb4fd35a45cf122bcd2db780231a085",
+    "packagetype": "bdist_wheel",
+    "python_version": "py3",
+    "requires_python": ">=3.10",
+    "size": 73077,
+    "upload_time": "2026-05-03T20:21:40",
+    "upload_time_iso_8601": "2026-05-03T20:21:40.509155Z",
+    "url": "https://files.pythonhosted.org/packages/0c/53/ddb8b8fa96367976cf52bb0610ffd529bd7d2795b2e4c1724724d071718c/requests-2.34.0.dev1-py3-none-any.whl",
+    "yanked": false,
+    "yanked_reason": null
+   },
+   {
+    "comment_text": null,
+    "core-metadata": false,
+    "digests": {
+     "blake2b_256": "f537b3032e92a7712e988c92df2ed408d6aec5b00838e6c06009ae695433915b",
+     "md5": "253977a8d7badb2dbbe44f7ab6c27ea2",
+     "sha256": "319ba4e42f1031737a08f3efc695c7dc436f22efb8d02630ca3a99cf23f752cd"
+    },
+    "downloads": -1,
+    "filename": "requests-2.34.0.dev1.tar.gz",
+    "has_sig": false,
+    "md5_digest": "253977a8d7badb2dbbe44f7ab6c27ea2",
+    "packagetype": "sdist",
+    "python_version": "source",
+    "requires_python": ">=3.10",
+    "size": 141686,
+    "upload_time": "2026-05-03T20:21:41",
+    "upload_time_iso_8601": "2026-05-03T20:21:41.747826Z",
+    "url": "https://files.pythonhosted.org/packages/f5/37/b3032e92a7712e988c92df2ed408d6aec5b00838e6c06009ae695433915b/requests-2.34.0.dev1.tar.gz",
+    "yanked": false,
+    "yanked_reason": null
+   }
+  ],
+  "2.34.1": [
+   {
+    "comment_text": null,
+    "core-metadata": {
+     "sha256": "2112d23d707460d134930d9f50fca0d1d559cb0d716dbffcba6a504e548f68e9"
+    },
+    "digests": {
+     "blake2b_256": "155a4a949d170476de3c04ac036b5466422fbcbf348a917d8042eedf2cac7d1b",
+     "md5": "47d08c6d31f54dfb7faf50c063d7f49c",
+     "sha256": "bf38a3ff993960d3dd819c08862c40b3c703306eb7c744fcd9f4ddbb95b548f0"
+    },
+    "downloads": -1,
+    "filename": "requests-2.34.1-py3-none-any.whl",
+    "has_sig": false,
+    "md5_digest": "47d08c6d31f54dfb7faf50c063d7f49c",
+    "packagetype": "bdist_wheel",
+    "python_version": "py3",
+    "requires_python": ">=3.10",
+    "size": 73085,
+    "upload_time": "2026-05-13T19:20:22",
+    "upload_time_iso_8601": "2026-05-13T19:20:22.827819Z",
+    "url": "https://files.pythonhosted.org/packages/15/5a/4a949d170476de3c04ac036b5466422fbcbf348a917d8042eedf2cac7d1b/requests-2.34.1-py3-none-any.whl",
+    "yanked": false,
+    "yanked_reason": null
+   },
+   {
+    "comment_text": null,
+    "core-metadata": false,
+    "digests": {
+     "blake2b_256": "24367180e7f077c38108945dbbdf60fe04db681c3feb6e96419f8c6dc8723741",
+     "md5": "e89d0d4ad2e28bc432ce4954a23dcc82",
+     "sha256": "0fc5669f2b69704449fe1552360bd2a73a54512dfd03e65529157f1513322beb"
+    },
+    "downloads": -1,
+    "filename": "requests-2.34.1.tar.gz",
+    "has_sig": false,
+    "md5_digest": "e89d0d4ad2e28bc432ce4954a23dcc82",
+    "packagetype": "sdist",
+    "python_version": "source",
+    "requires_python": ">=3.10",
+    "size": 142783,
+    "upload_time": "2026-05-13T19:20:24",
+    "upload_time_iso_8601": "2026-05-13T19:20:24.662635Z",
+    "url": "https://files.pythonhosted.org/packages/24/36/7180e7f077c38108945dbbdf60fe04db681c3feb6e96419f8c6dc8723741/requests-2.34.1.tar.gz",
+    "yanked": false,
+    "yanked_reason": null
+   }
+  ],
+  "2.34.2": [
+   {
+    "comment_text": null,
+    "core-metadata": {
+     "sha256": "8c384ba3e979480faae2859d3c5e6c1276dd2c3616e322e124d52c8cfc556f27"
+    },
+    "digests": {
+     "blake2b_256": "a0f4c67b0b3f1b9245e8d266f0f112c500d50e5b4e83cb6f3b71b6528104182a",
+     "md5": "cc4287951c320ff794e5e183c7a91f85",
+     "sha256": "2a0d60c172f83ac6ab31e4554906c0f3b3588d37b5cb939b1c061f4907e278e0"
+    },
+    "downloads": -1,
+    "filename": "requests-2.34.2-py3-none-any.whl",
+    "has_sig": false,
+    "md5_digest": "cc4287951c320ff794e5e183c7a91f85",
+    "packagetype": "bdist_wheel",
+    "python_version": "py3",
+    "requires_python": ">=3.10",
+    "size": 73075,
+    "upload_time": "2026-05-14T19:25:26",
+    "upload_time_iso_8601": "2026-05-14T19:25:26.443000Z",
+    "url": "https://files.pythonhosted.org/packages/a0/f4/c67b0b3f1b9245e8d266f0f112c500d50e5b4e83cb6f3b71b6528104182a/requests-2.34.2-py3-none-any.whl",
+    "yanked": false,
+    "yanked_reason": null
+   },
+   {
+    "comment_text": null,
+    "core-metadata": false,
+    "digests": {
+     "blake2b_256": "acc3e2a2b89f2d3e2179abd6d00ebd70bff6273f37fb3e0cc209f48b39d00cbf",
+     "md5": "611e438d0803e962500225f9807a475e",
+     "sha256": "f288924cae4e29463698d6d60bc6a4da69c89185ad1e0bcc4104f584e960b9ed"
+    },
+    "downloads": -1,
+    "filename": "requests-2.34.2.tar.gz",
+    "has_sig": false,
+    "md5_digest": "611e438d0803e962500225f9807a475e",
+    "packagetype": "sdist",
+    "python_version": "source",
+    "requires_python": ">=3.10",
+    "size": 142856,
+    "upload_time": "2026-05-14T19:25:27",
+    "upload_time_iso_8601": "2026-05-14T19:25:27.735762Z",
+    "url": "https://files.pythonhosted.org/packages/ac/c3/e2a2b89f2d3e2179abd6d00ebd70bff6273f37fb3e0cc209f48b39d00cbf/requests-2.34.2.tar.gz",
+    "yanked": false,
+    "yanked_reason": null
+   }
+  ]
+ },
+ "urls": [
+  {
+   "comment_text": null,
+   "core-metadata": {
+    "sha256": "8c384ba3e979480faae2859d3c5e6c1276dd2c3616e322e124d52c8cfc556f27"
+   },
+   "digests": {
+    "blake2b_256": "a0f4c67b0b3f1b9245e8d266f0f112c500d50e5b4e83cb6f3b71b6528104182a",
+    "md5": "cc4287951c320ff794e5e183c7a91f85",
+    "sha256": "2a0d60c172f83ac6ab31e4554906c0f3b3588d37b5cb939b1c061f4907e278e0"
+   },
+   "downloads": -1,
+   "filename": "requests-2.34.2-py3-none-any.whl",
+   "has_sig": false,
+   "md5_digest": "cc4287951c320ff794e5e183c7a91f85",
+   "packagetype": "bdist_wheel",
+   "python_version": "py3",
+   "requires_python": ">=3.10",
+   "size": 73075,
+   "upload_time": "2026-05-14T19:25:26",
+   "upload_time_iso_8601": "2026-05-14T19:25:26.443000Z",
+   "url": "https://files.pythonhosted.org/packages/a0/f4/c67b0b3f1b9245e8d266f0f112c500d50e5b4e83cb6f3b71b6528104182a/requests-2.34.2-py3-none-any.whl",
+   "yanked": false,
+   "yanked_reason": null
+  },
+  {
+   "comment_text": null,
+   "core-metadata": false,
+   "digests": {
+    "blake2b_256": "acc3e2a2b89f2d3e2179abd6d00ebd70bff6273f37fb3e0cc209f48b39d00cbf",
+    "md5": "611e438d0803e962500225f9807a475e",
+    "sha256": "f288924cae4e29463698d6d60bc6a4da69c89185ad1e0bcc4104f584e960b9ed"
+   },
+   "downloads": -1,
+   "filename": "requests-2.34.2.tar.gz",
+   "has_sig": false,
+   "md5_digest": "611e438d0803e962500225f9807a475e",
+   "packagetype": "sdist",
+   "python_version": "source",
+   "requires_python": ">=3.10",
+   "size": 142856,
+   "upload_time": "2026-05-14T19:25:27",
+   "upload_time_iso_8601": "2026-05-14T19:25:27.735762Z",
+   "url": "https://files.pythonhosted.org/packages/ac/c3/e2a2b89f2d3e2179abd6d00ebd70bff6273f37fb3e0cc209f48b39d00cbf/requests-2.34.2.tar.gz",
+   "yanked": false,
+   "yanked_reason": null
+  }
+ ],
+ "vulnerabilities": []
+}

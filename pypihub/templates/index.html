@@ -1,78 +1,98 @@
 {% extends "base.html" %}
-{% from "_macros.html" import icon, copy_button, source_marks %}
+{% from "_macros.html" import icon, copy_button, source_marks, pager %}
 {% block main %}
 {% set cmd_base = 'pip install --index-url ' ~ pip_index_url ~ ((' --trusted-host ' ~ trusted_host) if trusted_host else '') %}
+{% set filtering = state.q or state.source != 'all' %}
 
 <section class="hero">
   <div class="container-xl">
     <h1 class="hero__title">Python packages, served locally.</h1>
     <p class="hero__lede">Packages you upload are hosted here. Anything else is fetched from PyPI the first time it is installed, then kept on this server.</p>
 
-    <div class="finder" role="search">
-      <label class="visually-hidden" for="pkg-search">Find a package</label>
-      {{ icon('search', 'finder__icon') }}
-      <input id="pkg-search" class="finder__input" type="search" placeholder="Search or enter a package name"
-             autocomplete="off" autocapitalize="none" spellcheck="false" enterkeyhint="search">
-      <kbd class="finder__hint" aria-hidden="true">/</kbd>
-    </div>
+    <form class="finder-form" method="get" action="{{ url_for('pypihub_ui.index') }}" role="search" data-finder>
+      <div class="finder">
+        <label class="visually-hidden" for="pkg-search">Find a package</label>
+        {{ icon('search', 'finder__icon') }}
+        <input id="pkg-search" class="finder__input" name="q" type="search" value="{{ state.q }}" maxlength="100"
+               placeholder="Search or enter a package name" autocomplete="off" autocapitalize="none" spellcheck="false" enterkeyhint="search">
+        <kbd class="finder__hint" aria-hidden="true">/</kbd>
+      </div>
+      {% if state.source != 'all' %}<input type="hidden" name="source" value="{{ state.source }}">{% endif %}
+      {% if state.sort != 'name' or state.dir != 'asc' %}<input type="hidden" name="sort" value="{{ state.sort }}"><input type="hidden" name="dir" value="{{ state.dir }}">{% endif %}
+      <button class="visually-hidden" type="submit">Search</button>
+    </form>
 
-    <div class="cmd cmd--prompt">
-      <code id="cmd-main">{{ cmd_base }} <span class="cmd__pkg" data-cmd-pkg>package-name</span></code>
-      {{ copy_button('cmd-main') }}
+    <div id="hero-cmd">
+      <div class="cmd cmd--prompt">
+        <code id="cmd-main">{{ cmd_base }} <span class="cmd__pkg">{{ command_package }}</span></code>
+        {{ copy_button('cmd-main') }}
+      </div>
+      {% if upstream_note %}
+      <p class="cmd__note">Not stored on this server yet. Installing it through this index fetches it from PyPI and keeps a copy here.</p>
+      {% endif %}
     </div>
-    <p class="cmd__note" data-cmd-note hidden></p>
   </div>
 </section>
 
-<section class="index" aria-labelledby="index-title">
+<section class="index" id="results" aria-labelledby="index-title">
   <div class="container-xl">
     <div class="index__head">
       <div>
         <h2 id="index-title" class="index__title">Packages</h2>
-        {% if snapshot.packages %}
-        <p class="index__summary" data-summary data-default="{{ '{:,}'.format(snapshot.packages|length) }} package{{ '' if snapshot.packages|length == 1 else 's' }}, {{ '{:,}'.format(snapshot.total_files) }} file{{ '' if snapshot.total_files == 1 else 's' }}, {{ snapshot.total_size|filesize }} on disk">
-          {{ '{:,}'.format(snapshot.packages|length) }} package{{ '' if snapshot.packages|length == 1 else 's' }}, {{ '{:,}'.format(snapshot.total_files) }} file{{ '' if snapshot.total_files == 1 else 's' }}, {{ snapshot.total_size|filesize }} on disk
+        {% if stats.projects %}
+        <p class="index__summary">
+          {% if filtering -%}
+            {{ '{:,}'.format(listing.total) }} of {{ '{:,}'.format(stats.projects) }} package{{ '' if stats.projects == 1 else 's' }}
+          {%- else -%}
+            {{ '{:,}'.format(stats.projects) }} package{{ '' if stats.projects == 1 else 's' }}, {{ '{:,}'.format(stats.files) }} file{{ '' if stats.files == 1 else 's' }}, {{ stats.size|filesize }} on disk
+          {%- endif %}
         </p>
         {% endif %}
       </div>
-      {% if snapshot.packages %}
-      <div class="seg" role="group" aria-label="Show packages by source">
-        <button type="button" class="seg__btn" data-source-filter="all" aria-pressed="true">All <span class="seg__n">{{ snapshot.packages|length }}</span></button>
-        <button type="button" class="seg__btn" data-source-filter="local" aria-pressed="false">Local <span class="seg__n">{{ snapshot.count('local') }}</span></button>
-        <button type="button" class="seg__btn" data-source-filter="cached" aria-pressed="false">Cached <span class="seg__n">{{ snapshot.count('cached') }}</span></button>
-      </div>
+      {% if stats.projects %}
+      <nav class="seg" aria-label="Show packages by source">
+        <a class="seg__btn" href="{{ source_url('all') }}" data-nav{% if state.source == 'all' %} aria-current="true"{% endif %}>All <span class="seg__n">{{ stats.projects }}</span></a>
+        <a class="seg__btn" href="{{ source_url('local') }}" data-nav{% if state.source == 'local' %} aria-current="true"{% endif %}>Local <span class="seg__n">{{ stats.local_projects }}</span></a>
+        <a class="seg__btn" href="{{ source_url('cached') }}" data-nav{% if state.source == 'cached' %} aria-current="true"{% endif %}>Cached <span class="seg__n">{{ stats.cached_projects }}</span></a>
+      </nav>
       {% endif %}
     </div>
 
-    {% if snapshot.packages %}
+    {% if listing.items %}
     <div class="table-wrap">
-      <table class="pkgs" data-pkg-table>
-        <caption class="visually-hidden">Packages stored on this server</caption>
+      <table class="pkgs">
+        <caption class="visually-hidden">Packages stored on this server, page {{ listing.page }} of {{ listing.pages }}</caption>
         <thead>
           <tr>
-            <th scope="col" class="c-name" aria-sort="ascending"><button type="button" class="sort" data-sort="name">Package</button></th>
+            <th scope="col" class="c-name" aria-sort="{{ aria_sort('name') }}"><a class="sort" href="{{ sort_url('name') }}" data-nav>Package</a></th>
             <th scope="col" class="c-version">Version</th>
             <th scope="col" class="c-source">Source</th>
-            <th scope="col" class="c-files num" aria-sort="none"><button type="button" class="sort" data-sort="files">Files</button></th>
-            <th scope="col" class="c-size num" aria-sort="none"><button type="button" class="sort" data-sort="size">Size</button></th>
-            <th scope="col" class="c-updated num" aria-sort="none"><button type="button" class="sort" data-sort="updated">Updated</button></th>
+            <th scope="col" class="c-files num" aria-sort="{{ aria_sort('files') }}"><a class="sort" href="{{ sort_url('files') }}" data-nav>Files</a></th>
+            <th scope="col" class="c-size num" aria-sort="{{ aria_sort('size') }}"><a class="sort" href="{{ sort_url('size') }}" data-nav>Size</a></th>
+            <th scope="col" class="c-updated num" aria-sort="{{ aria_sort('updated') }}"><a class="sort" href="{{ sort_url('updated') }}" data-nav>Updated</a></th>
           </tr>
         </thead>
         <tbody>
-          {% for p in snapshot.packages %}
-          <tr data-key="{{ p.key }}" data-name="{{ p.name }}" data-source="{{ p.sources|join(' ') }}" data-files="{{ p.files|length }}" data-size="{{ p.total_size }}" data-updated="{{ p.updated|int }}">
+          {% for p in listing.items %}
+          <tr>
             <th scope="row" class="c-name"><a class="pkgs__link" href="{{ url_for('pypihub_ui.project', name=p.key) }}">{{ p.name }}</a></th>
             <td class="c-version">{{ p.latest or '–' }}</td>
             <td class="c-source">{{ source_marks(p.sources) }}</td>
-            <td class="c-files num">{{ p.files|length }}</td>
-            <td class="c-size num">{{ p.total_size|filesize }}</td>
+            <td class="c-files num">{{ p.files }}</td>
+            <td class="c-size num">{{ p.size|filesize }}</td>
             <td class="c-updated num"><time datetime="{{ p.updated|utc_iso }}" title="{{ p.updated|utc_text }}">{{ p.updated|ago }}</time></td>
           </tr>
           {% endfor %}
         </tbody>
       </table>
     </div>
-    <p class="nomatch" data-nomatch hidden></p>
+    <div class="list-foot">
+      <p class="list-foot__range">Showing {{ '{:,}'.format(listing.first) }} to {{ '{:,}'.format(listing.last) }} of {{ '{:,}'.format(listing.total) }}</p>
+      {{ pager(listing.page, listing.pages, numbers, page_url, 'Package list pages') }}
+    </div>
+    {% elif stats.projects %}
+    <p class="nomatch">No {{ state.source ~ ' ' if state.source != 'all' else '' }}packages{% if state.q %} match "{{ state.q }}"{% endif %}.
+      <a href="{{ clear_url }}" data-nav>Clear the search</a></p>
     {% else %}
     <div class="empty">
       {{ icon('inbox', 'empty__icon') }}

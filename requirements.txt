@@ -1,11 +1,18 @@
-# Runtime dependencies of the Flask server. Keep in sync with setup.py.
+# Runtime dependencies of the server, including every database driver and Redis, as used by the Docker image.
+# Keep in sync with the extras in setup.py.
 Flask
+Flask-Limiter>=3.5
 requests
 beautifulsoup4
-SQLAlchemy
+SQLAlchemy>=2.0
 bcrypt
 configset
 git+https://github.com/cumulus13/pydebugger2
 git+https://github.com/cumulus13/rich
 rich-argparse
 packaging>=20.9
+psycopg[binary]>=3.1
+PyMySQL>=1.1
+cryptography
+redis>=5
+readme_renderer[md]>=43

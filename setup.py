@@ -36,10 +36,18 @@ setup(
         "configset",
     ],
     extras_require={
-        "flask": ["Flask", "SQLAlchemy", "bcrypt", "packaging>=20.9"],
-        "mysql": ["SQLAlchemy", "mysqlclient"],
-        "postgres": ["SQLAlchemy", "psycopg2"],
+        # What the Flask server needs to run (SQLite works out of the box).
+        "flask": ["Flask", "Flask-Limiter>=3.5", "SQLAlchemy>=2.0", "bcrypt", "packaging>=20.9"],
+        # Database drivers: pure Python or self-contained wheels, nothing to compile.
+        "postgres": ["psycopg[binary]>=3.1"],
+        "mysql": ["PyMySQL>=1.1", "cryptography"],
+        # Shared cache and rate-limit counters across workers and replicas.
+        "redis": ["redis>=5"],
+        # README rendering on package pages, the same library pypi.org uses. Without it descriptions show as plain text.
+        "readme": ["readme_renderer[md]>=43"],
         "bcrypt": ["bcrypt"],
+        "all": ["Flask", "Flask-Limiter>=3.5", "SQLAlchemy>=2.0", "bcrypt", "packaging>=20.9",
+                "psycopg[binary]>=3.1", "PyMySQL>=1.1", "cryptography", "redis>=5", "readme_renderer[md]>=43"],
     },
     classifiers=[
         "Development Status :: 4 - Beta",

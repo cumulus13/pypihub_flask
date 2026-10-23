@@ -28,38 +28,46 @@ flowchart TB
         T["twine / curl"]
     end
 
-    subgraph Server["PyPihub: gunicorn with gthread workers"]
+    subgraph Server["PyPihub: gunicorn workers (stateless, add more behind a load balancer)"]
         direction LR
-        subgraph UI["Web interface (pypihub/web.py)"]
-            V["Pages and health check<br/>/ , /project/NAME/ , /healthz<br/>Jinja templates, vendored Bootstrap"]
+        subgraph UI["Web interface (web.py)"]
+            V["Package list: search, sort, paging<br/>Package pages: README, links, releases<br/>/healthz"]
         end
-        subgraph Index["Package index (pypihub/pypihub.py)"]
+        subgraph Index["Package index (pypihub.py)"]
             S["Download side<br/>/simple/NAME/<br/>/packages/NAME/FILE<br/>/cache/NAME/FILE"]
-            U["Upload and sign-in<br/>POST / , POST /upload/NAME/<br/>/signin , basic auth"]
+            U["Upload and sign-in<br/>POST / , POST /upload/NAME/<br/>basic auth, rate limited"]
         end
     end
 
-    subgraph Data["/data volume"]
+    subgraph State["State"]
         direction LR
-        L[("packages/<br/>uploaded files")]
-        C[("cache/<br/>files from PyPI")]
-        D[("pypihub.db<br/>users, package records")]
+        DB[("Database<br/>SQLite, PostgreSQL or MySQL<br/>users, file catalog,<br/>copied PyPI details")]
+        FS[("Files on disk<br/>packages/ uploads<br/>cache/ from PyPI")]
+        R[("Redis (optional)<br/>shared cache,<br/>rate-limit counters")]
     end
 
-    X["pypi.org: simple index<br/>files.pythonhosted.org: files"]
+    X["pypi.org<br/>simple index, JSON API, files"]
 
     B --> V
     P --> S
     T --> U
-    V -. "read-only scan" .-> Data
-    S -- "read, and save new downloads" --> Data
-    U -- "write files, check users" --> Data
-    S -. "index lookup, file download" .-> X
+    V -- "pages of packages" --> DB
+    V -. "cached details" .-> R
+    S -- "read, save new downloads" --> FS
+    S -. "file hashes" .-> DB
+    U -- "write files, check users, record" --> FS
+    U --> DB
+    S -. "index, files, details" .-> X
+    V -. "README, links, releases" .-> X
 ```
+
+[![Architecture: components](https://i.ibb.co/zD2S4Vk/architecture-components.png)](https://i.ibb.co/zD2S4Vk/architecture-components.png)
 
 [![Architecture 1](https://i.ibb.co/nMmXnfLS/architecture1.jpg)](https://i.ibb.co/nMmXnfLS/architecture1.jpg)
 
-The web interface only reads the two package directories, so it never changes how pip and twine talk to the server.
+The files on disk are what pip downloads. The database is an index of them (so a page of the package list is one SQL
+query, not a directory scan) plus the accounts and the details copied from PyPI. `pypihub reindex` rebuilds the index
+from disk at any time. Redis only holds things that can be rebuilt, so losing it costs nothing but warm-up time.
 
 ### What happens on `pip install`
 
@@ -220,6 +228,18 @@ python pypihub -h
 -v, --verbose         Enable verbose output
 ```
 
+Commands (the first argument, `serve` by default):
+
+```
+pypihub                       Run the development server (production: gunicorn, see Docker)
+pypihub user -u NAME          Create a user or change a password (-l lists users)
+pypihub reindex               Make the package catalog match the files on disk (safe to run any time)
+pypihub prune --max-size 20GB Delete the oldest cached files until the cache fits
+```
+
+After upgrading an existing installation, run `pypihub reindex` once so the package list sees the files already on
+disk (the development server and the Docker image do it for you at start).
+
 ## Package Upload
 
 ### Using Twine
@@ -288,13 +308,73 @@ Typing a name that is not stored yet shows the exact `pip install` command, beca
 PyPihub fetches it from PyPI and caches it.
 
 It is built on Bootstrap 5.3 with self-hosted fonts and icons, all vendored under `pypihub/static`
-(see `pypihub/static/vendor/README.md`), so it works on a network without internet access.
+(see `pypihub/static/vendor/README.md`), so it works on a network without internet access. README images load
+from their own hosts, as on pypi.org.
 
-| Variable | Purpose |
-|---|---|
-| `PYPIHUB_UI_CACHE_TTL` | Seconds a directory scan is reused by the interface (default `5`, `0` disables) |
-| `PYPIHUB_TRUST_PROXY` | Set to `1` behind a reverse proxy so links use `X-Forwarded-Proto`, `X-Forwarded-Host` and `X-Forwarded-Prefix` |
-| `SECRET_KEY` | Signs sign-in cookies. Without it a random key is generated for each process |
+## Configuration reference
+
+Every setting can be an environment variable.
+
+| Variable | Default | Purpose |
+|---|---|---|
+| `DATABASE_URL` | SQLite in the data directory | `postgresql://user:pass@host/db` or `mysql://user:pass@host/db` (bare schemes use the bundled psycopg and PyMySQL drivers) |
+| `DB_POOL_SIZE`, `DB_MAX_OVERFLOW` | 10, 20 | Connections per worker. Keep `workers x (size + overflow)` below the server's connection limit |
+| `REDIS_URL` | none | Shared cache and rate-limit counters. Without it each worker has its own |
+| `SECRET_KEY` | random per process | Signs sign-in cookies. Set it when running more than one worker (the Docker image keeps one in the volume) |
+| `PYPI_SIMPLE_URL` | `https://pypi.org/simple` | Upstream index. The JSON API for package pages is derived from it, or set `PYPI_JSON_URL` |
+| `PYPIHUB_META`, `PYPIHUB_META_TTL` | on, 21600 | Package page details from PyPI: switch, and seconds before a refresh |
+| `PYPIHUB_UPSTREAM_TTL` | 300 | Seconds a project's file list is reused |
+| `PYPIHUB_UPSTREAM_TIMEOUT` | `3.05,20` | Connect and read timeout towards PyPI, in seconds |
+| `PYPIHUB_UPSTREAM_BACKOFF` | 15 | After a failure, seconds to answer from stored copies instead of waiting on PyPI again |
+| `PYPIHUB_CACHE_MAX_SIZE` | unlimited | e.g. `100GB`. At the limit new downloads are streamed but not stored |
+| `PYPIHUB_ALLOW_OVERWRITE` | off | Uploaded files are immutable unless this is on |
+| `PYPIHUB_MAX_UPLOAD_MB` | 200 | Largest upload |
+| `PYPIHUB_RATE_LIMIT_DEFAULT` | none | All requests per client, e.g. `1200 per minute` |
+| `PYPIHUB_RATE_LIMIT_UPLOAD`, `PYPIHUB_RATE_LIMIT_AUTH_FAILURES` | `60 per minute`, `10 per minute` | Upload requests, and rejected logins (password guessing). `0` switches one off |
+| `PYPIHUB_TRUST_PROXY` | off | Set to `1` behind a reverse proxy, so client addresses and links use `X-Forwarded-*` |
+| `PYPIHUB_UI_PER_PAGE` | 30 | Packages per page |
+
+## Databases
+
+PyPihub uses SQLAlchemy and is tested on every change against **SQLite**, **PostgreSQL 16** and **MySQL 8.0**
+(the whole test suite runs on each; see `.github/workflows/ci.yml`). Tables are created at startup, including when
+several workers start at once, and new versions add tables without touching existing data.
+
+A relational database is the right fit here: a few thousand small transactional writes (accounts, one catalog row
+per stored file), many indexed reads and paging. ClickHouse is built for the opposite (huge append-only analytics,
+no row-level updates or unique constraints), so it would be a poor home for accounts and the file catalog. It would
+only make sense for download statistics at a scale PostgreSQL cannot count, and PyPihub has none.
+
+Use PostgreSQL for a public service. SQLite is fine for a single server with modest traffic.
+
+## Production deployment
+
+```bash
+cp .env.example .env     # set POSTGRES_PASSWORD, PYPIHUB_ADMIN_USER and PYPIHUB_ADMIN_PASSWORD
+docker compose -f docker-compose.production.yml up -d
+```
+
+This starts PyPihub, PostgreSQL and Redis. Put a reverse proxy with TLS in front (and keep `PYPIHUB_TRUST_PROXY=1`).
+What to look after:
+
+- **Disk.** Anyone can make a public server cache packages, so set `PYPIHUB_CACHE_MAX_SIZE` and run
+  `pypihub prune --max-size 80GB` from cron (the oldest cached files go first).
+- **Backups.** The database and the `packages/` directory. The `cache/` directory and Redis can be rebuilt.
+- **After restoring or editing files by hand,** run `pypihub reindex`. The container does it at every start.
+- **Workers.** `WEB_CONCURRENCY` x `GUNICORN_THREADS` requests run at once. A slow or dead PyPI does not freeze the
+  site: calls have timeouts and, after a failure, workers stop asking for a while.
+- **More than one server** needs the `packages/` and `cache/` directories on shared storage. Everything else is
+  already shared through the database and Redis.
+
+There is no task queue (Celery, RabbitMQ) on purpose: downloads stream straight through, and the periodic jobs
+(`reindex`, `prune`) are one-line commands for cron. A queue would add two services and no capability. It becomes
+worth adding when there is background work such as scanning uploads for malware.
+
+## Not covered
+
+PyPihub is a caching index with account-based uploads, not a copy of pypi.org: there is no self-service registration,
+no per-project ownership (any account may upload any project name), no yanking or deleting through the interface, and
+no download statistics. Object storage (S3) for the files is not supported yet.
 
 ## Docker
 
@@ -317,6 +397,7 @@ docker run -d --name pypihub -p 5000:5000 -v pypihub-data:/data \
   Use `PYPIHUB_ADMIN_PASSWORD_FILE` to read the password from a Docker secret. Add more users with
   `docker exec -it pypihub pypihub user -u NAME`.
 - Without `SECRET_KEY` a key is generated once and kept in the volume.
+- For PostgreSQL and Redis use `docker-compose.production.yml` (see Production deployment).
 - Served by gunicorn (`WEB_CONCURRENCY` workers, `GUNICORN_THREADS` threads each). Images for `linux/amd64` and
   `linux/arm64` are published to GHCR: `:edge` from `master`, `:X.Y.Z`, `:X.Y` and `:latest` from release tags.
 
@@ -327,15 +408,29 @@ pip install -r requirements-dev.txt
 pytest
 ```
 
-GitHub Actions: `ci.yml` (lint, tests on Python 3.10 to 3.13 and Windows, wheel build and smoke test, Docker build and run),
+That runs everything on SQLite and needs no network. To run it against PostgreSQL, MySQL and Redis as well:
+
+```bash
+export PYPIHUB_TEST_POSTGRES_URL=postgresql://user:pass@127.0.0.1/pypihub_test
+export PYPIHUB_TEST_MYSQL_URL=mysql://user:pass@127.0.0.1/pypihub_test
+export PYPIHUB_TEST_REDIS_URL=redis://127.0.0.1:6379/0
+pytest                                                    # database and Redis specific tests
+PYPIHUB_TEST_DATABASE_URL=$PYPIHUB_TEST_POSTGRES_URL pytest   # the whole suite on PostgreSQL
+```
+
+The test databases are emptied by the tests: use ones you do not care about.
+
+GitHub Actions: `ci.yml` (lint, tests on Python 3.10 to 3.13 and Windows, the whole suite on PostgreSQL and on MySQL
+with Redis, wheel build and smoke test of a minimal and a full install, Docker build and run),
 `docker.yml` (publish the image to GHCR) and `publish.yml` (publish a GitHub release to PyPI through trusted publishing).
 
 ## API Endpoints
 
 ### Web Interface
-- `GET /` - Package browser: search, filter by local/cached, sort, copy-ready pip and twine commands
-- `GET /project/<name>/` - Files of one package with download links
-- `GET /healthz` - JSON health check (used by the Docker `HEALTHCHECK`)
+- `GET /` - Package browser: `?q=` search, `?source=all|local|cached`, `?sort=name|updated|files|size`, `?dir=asc|desc`, `?page=`
+- `GET /project/<name>/` - Package page: details from PyPI (README, links, releases) and the files stored here
+- `GET /project/<name>/<version>/` - The same for one release
+- `GET /healthz` - JSON health check: directories, database and Redis (used by the Docker `HEALTHCHECK`)
 
 ### Package Management
 - `POST /upload/<package>/` - Upload package (with auth)
@@ -344,7 +439,7 @@ GitHub Actions: `ci.yml` (lint, tests on Python 3.10 to 3.13 and Windows, wheel 
 - `GET /cache/<package>/<filename>` - Serve cached package files
 
 ### Package Index
-- `GET /simple/<package>/` - Simple index for specific package
+- `GET /simple/<package>/` - Simple index (PEP 503) merging local files, cached files and PyPI's list, with hashes and `data-requires-python`
 
 ## Directory Structure
 
@@ -355,7 +450,14 @@ Source tree:
 ├── pypihub/
 │   ├── pypihub.py          # Package index, upload and authentication (Flask app)
 │   ├── web.py              # Web interface blueprint: /, /project/NAME/, /healthz
-│   ├── database.py         # SQLAlchemy models (users, packages)
+│   ├── database.py         # Models and engine setup for SQLite, PostgreSQL and MySQL
+│   ├── catalog.py          # Database index of stored files: paged listing, statistics, reindex, prune
+│   ├── pypimeta.py         # Package details copied from PyPI: reduction, storage, refresh
+│   ├── readme.py           # Safe HTML for READMEs (Markdown, reStructuredText, plain text)
+│   ├── upstream.py         # PyPI client: timeouts, retries, cached index, circuit breaker
+│   ├── cache.py            # Key/value cache: in-process or Redis
+│   ├── limits.py           # Rate limits
+│   ├── dist.py             # Validation of project and file names
 │   ├── logger.py           # Logging setup
 │   ├── settings.py         # Settings file (optional)
 │   ├── pypihub.ini         # Configuration file (optional)
@@ -364,7 +466,8 @@ Source tree:
 ├── tests/                  # pytest suite
 ├── docker/entrypoint.sh    # Container entrypoint
 ├── Dockerfile
-├── docker-compose.yml
+├── docker-compose.yml        # SQLite, one container
+├── docker-compose.production.yml   # PostgreSQL + Redis
 └── .github/workflows/      # ci.yml, docker.yml, publish.yml
 ```
 
@@ -467,12 +570,13 @@ For issues and questions, please create/open an issue in the repository or conta
 
 `Warning: Do not expose this server to the public internet without proper authentication and security measures.`
 
-## Author
-
+## 👤 Author
+        
 [Hadi Cahyadi](mailto:cumulus13@gmail.com)
     
+
 [![Buy Me a Coffee](https://www.buymeacoffee.com/assets/img/custom_images/orange_img.png)](https://www.buymeacoffee.com/cumulus13)
 
 [![Donate via Ko-fi](https://ko-fi.com/img/githubbutton_sm.svg)](https://ko-fi.com/cumulus13)
-
+ 
 [Support me on Patreon](https://www.patreon.com/cumulus13)

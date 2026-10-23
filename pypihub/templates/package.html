@@ -1,60 +1,226 @@
 {% extends "base.html" %}
-{% from "_macros.html" import icon, copy_button, source_marks %}
-{% block title %}{{ pkg.name }} - PyPihub{% endblock %}
+{% from "_macros.html" import icon, copy_button, source_marks, pager %}
+{% block title %}{{ display_name }}{% if shown_version %} {{ shown_version }}{% endif %} - PyPihub{% endblock %}
+
+{% macro release_rows(rows) %}
+{% for r in rows %}
+<tr>
+  <th scope="row" class="c-name"><a class="rel__link" href="{{ url_for('pypihub_ui.project_version', name=pkg.key, version=r.version) }}"{% if r.version == shown_version %} aria-current="page"{% endif %}>{{ r.version }}</a></th>
+  <td class="c-updated">{% if r.uploaded %}<time datetime="{{ r.uploaded }}" title="{{ r.uploaded|iso_text }}">{{ r.uploaded|iso_date }}</time>{% endif %}</td>
+  <td class="c-notes">
+    {% if r.latest %}<span class="badge-ph badge-ph--latest">Latest</span>{% endif %}
+    {% if r.pre %}<span class="badge-ph">Pre-release</span>{% endif %}
+    {% if r.yanked %}<span class="badge-ph badge-ph--warn">Yanked</span>{% endif %}
+  </td>
+  <td class="c-source">{% if r.stored %}<span class="src" title="At least one file of this release is stored on this server"><span class="led led--local" aria-hidden="true"></span><span class="src__text">On this server</span></span>{% endif %}</td>
+</tr>
+{% endfor %}
+{% endmacro %}
+
+{% macro people(list) %}{% for person in list %}{% if person.email %}<a href="mailto:{{ person.email }}">{{ person.name or person.email }}</a>{% else %}{{ person.name }}{% endif %}{% if not loop.last %}, {% endif %}{% endfor %}{% endmacro %}
+
 {% block main %}
 {% set cmd_base = 'pip install --index-url ' ~ pip_index_url ~ ((' --trusted-host ' ~ trusted_host) if trusted_host else '') %}
 <section class="hero hero--package">
   <div class="container-xl">
-    <p class="crumbs"><a href="{{ url_for('pypihub_ui.index') }}">{{ icon('arrow-left') }} All packages</a></p>
-    <h1 class="hero__title hero__title--package">{{ pkg.name }}{% if pkg.latest %} <span class="pkg-ver">{{ pkg.latest }}</span>{% endif %}</h1>
+    <p class="crumbs">
+      <a href="{{ url_for('pypihub_ui.index') }}">{{ icon('arrow-left') }} All packages</a>
+    </p>
+    <h1 class="hero__title hero__title--package">{{ display_name }}{% if shown_version %} <span class="pkg-ver">{{ shown_version }}</span>{% endif %}</h1>
+    <p class="pkg-badges">
+      {% if meta and is_latest %}<span class="badge-ph badge-ph--latest">Latest version</span>{% endif %}
+      {% if meta and not is_latest %}<a class="badge-ph" href="{{ url_for('pypihub_ui.project', name=pkg.key) }}">Not the latest. See the latest release</a>{% endif %}
+      {% if meta and meta.yanked %}<span class="badge-ph badge-ph--warn">Yanked{% if meta.yanked_reason %}: {{ meta.yanked_reason }}{% endif %}</span>{% endif %}
+      {% if meta and meta.files %}<span class="pkg-released">Released: {{ meta.files[0].uploaded|iso_date }}</span>{% endif %}
+    </p>
+    {% if meta and meta.summary %}<p class="hero__lede">{{ meta.summary }}</p>{% endif %}
+    {% if not meta %}
     <p class="hero__lede">
       {{ pkg.files|length }} file{{ '' if pkg.files|length == 1 else 's' }}, {{ pkg.total_size|filesize }} on this server.
       <span class="pkg-sources">{{ source_marks(pkg.sources) }}</span>
     </p>
+    {% endif %}
     <div class="cmd cmd--prompt">
-      <code id="cmd-main">{{ cmd_base }} {{ pkg.name }}</code>
+      <code id="cmd-main">{{ cmd_base }} {{ install_target }}</code>
       {{ copy_button('cmd-main') }}
     </div>
   </div>
 </section>
 
-<section class="index" aria-labelledby="files-title">
-  <div class="container-xl">
-    <h2 id="files-title" class="index__title">Files</h2>
-    <div class="table-wrap">
-      <table class="pkgs files">
-        <caption class="visually-hidden">Files of {{ pkg.name }} stored on this server</caption>
-        <thead>
-          <tr>
-            <th scope="col" class="c-name">Filename</th>
-            <th scope="col" class="c-type">Type</th>
-            <th scope="col" class="c-source">Source</th>
-            <th scope="col" class="c-size num">Size</th>
-            <th scope="col" class="c-updated num">Added</th>
-            <th scope="col" class="c-get"><span class="visually-hidden">Download</span></th>
-          </tr>
-        </thead>
-        <tbody>
-          {% for f in pkg.sorted_files() %}
-          <tr>
-            <th scope="row" class="c-name file-name">{{ f.filename }}</th>
-            <td class="c-type">{{ {'wheel': 'Wheel', 'sdist': 'Source', 'other': 'Other'}[f.kind] }}</td>
-            <td class="c-source">{{ source_marks([f.source]) }}</td>
-            <td class="c-size num">{{ f.size|filesize }}</td>
-            <td class="c-updated num"><time datetime="{{ f.mtime|utc_iso }}" title="{{ f.mtime|utc_text }}">{{ f.mtime|ago }}</time></td>
-            <td class="c-get">
-              <a class="dl" href="{{ url_for('serve_package' if f.source == 'local' else 'serve_cached', package=f.directory, filename=f.filename) }}" download>
-                {{ icon('download') }}<span class="visually-hidden">Download {{ f.filename }}</span>
-              </a>
-            </td>
-          </tr>
-          {% endfor %}
-        </tbody>
-      </table>
+<div class="container-xl pkg-layout{% if not meta %} pkg-layout--single{% endif %}">
+  {% if meta %}
+  <aside class="pkg-side" aria-label="Package details">
+    <nav class="side-block side-block--nav" aria-label="On this page">
+      <h2 class="side-block__title">On this page</h2>
+      <ul class="side-nav">
+        <li><a href="#description">Project description</a></li>
+        {% if meta.requires_dist %}<li><a href="#dependencies">Dependencies</a></li>{% endif %}
+        {% if releases %}<li><a href="#history">Release history</a></li>{% endif %}
+        {% if pypi_files %}<li><a href="#pypi-files">Download files</a></li>{% endif %}
+        <li><a href="#files">Files on this server</a></li>
+      </ul>
+    </nav>
+    {% if meta.project_urls %}
+    <div class="side-block">
+      <h2 class="side-block__title">Project links</h2>
+      <ul class="side-links">
+        {% for label, url in meta.project_urls.items() %}
+        <li><a href="{{ url }}" rel="nofollow noopener noreferrer" target="_blank">{{ label }}</a></li>
+        {% endfor %}
+      </ul>
     </div>
-    {% if 'cached' in pkg.sources %}
-    <p class="note">Only files already stored on this server are listed. Other releases are fetched from PyPI when pip asks for them.</p>
     {% endif %}
+    <div class="side-block">
+      <h2 class="side-block__title">Meta</h2>
+      <dl class="side-meta">
+        {% if meta.license %}<dt>License</dt><dd>{{ meta.license }}</dd>{% endif %}
+        {% if meta.authors %}<dt>Author</dt><dd>{{ people(meta.authors) }}</dd>{% endif %}
+        {% if meta.maintainers %}<dt>Maintainer</dt><dd>{{ people(meta.maintainers) }}</dd>{% endif %}
+        {% if meta.requires_python %}<dt>Requires</dt><dd>Python {{ meta.requires_python }}</dd>{% endif %}
+      </dl>
+      {% if meta.keywords %}
+      <ul class="chips" aria-label="Keywords">{% for word in meta.keywords %}<li class="chip">{{ word }}</li>{% endfor %}</ul>
+      {% endif %}
+    </div>
+    {% if meta.classifiers %}
+    <details class="side-block side-block--details">
+      <summary class="side-block__title">Classifiers</summary>
+      {% for group, items in group_classifiers(meta.classifiers).items() %}
+      <h3 class="class-head">{{ group }}</h3>
+      <ul class="class-list">{% for item in items %}<li>{{ item }}</li>{% endfor %}</ul>
+      {% endfor %}
+    </details>
+    {% endif %}
+  </aside>
+  {% endif %}
+
+  <div class="pkg-main">
+    {% if state == 'stale' %}
+    <p class="notice" role="status">Details copied from PyPI on {{ fetched_at|utc_text }}. PyPI could not be reached just now, so they may be out of date.</p>
+    {% elif state == 'missing' %}
+    <p class="notice" role="status">This package is not on PyPI, so only the files stored on this server are shown.</p>
+    {% elif state == 'unavailable' %}
+    <p class="notice" role="status">Details from PyPI could not be loaded. The files stored on this server are shown below.</p>
+    {% endif %}
+
+    {% if meta and meta.vulnerabilities %}
+    <section class="notice notice--warn" aria-labelledby="vuln-title">
+      <h2 id="vuln-title" class="notice__title">{{ meta.vulnerabilities|length }} known vulnerabilit{{ 'y' if meta.vulnerabilities|length == 1 else 'ies' }} in this release</h2>
+      <ul class="vuln-list">
+        {% for v in meta.vulnerabilities %}
+        <li>{% if v.link %}<a href="{{ v.link }}" rel="nofollow noopener noreferrer" target="_blank">{{ v.id }}</a>{% else %}{{ v.id }}{% endif %}{% if v.summary %}: {{ v.summary }}{% endif %}{% if v.fixed_in %} Fixed in {{ v.fixed_in|join(', ') }}.{% endif %}</li>
+        {% endfor %}
+      </ul>
+    </section>
+    {% endif %}
+
+    {% if meta %}
+    <section id="description" class="pkg-section" aria-labelledby="description-title">
+      <h2 id="description-title" class="pkg-section__title">Project description</h2>
+      {% if meta.description_html %}
+      <div class="readme">{{ meta.description_html|safe }}</div>
+      {% elif meta.description %}
+      <pre class="readme-plain">{{ meta.description[:100000] }}</pre>
+      {% else %}
+      <p class="note">The author did not provide a description.</p>
+      {% endif %}
+    </section>
+
+    {% if meta.requires_dist %}
+    <section id="dependencies" class="pkg-section" aria-labelledby="deps-title">
+      <h2 id="deps-title" class="pkg-section__title">Dependencies</h2>
+      {% for extra, lines in split_requirements(meta.requires_dist).items() %}
+      <h3 class="dep-head">{% if extra %}Extra: <code class="inline">{{ extra }}</code>{% else %}Required{% endif %}</h3>
+      <ul class="dep-list">{% for line in lines %}<li><code>{{ line }}</code></li>{% endfor %}</ul>
+      {% endfor %}
+    </section>
+    {% endif %}
+
+    {% if releases %}
+    <section id="history" class="pkg-section" aria-labelledby="history-title">
+      <h2 id="history-title" class="pkg-section__title">Release history <span class="pkg-section__count">{{ releases|length }}</span></h2>
+      <div class="table-wrap">
+        <table class="pkgs rel">
+          <caption class="visually-hidden">Releases of {{ display_name }}</caption>
+          <thead><tr><th scope="col" class="c-name">Version</th><th scope="col" class="c-updated">Released</th><th scope="col" class="c-notes">Notes</th><th scope="col" class="c-source">Stored</th></tr></thead>
+          <tbody>{{ release_rows(releases[:20]) }}</tbody>
+        </table>
+      </div>
+      {% if releases|length > 20 %}
+      <details class="more">
+        <summary>Show {{ releases|length - 20 }} older release{{ '' if releases|length - 20 == 1 else 's' }}</summary>
+        <div class="table-wrap">
+          <table class="pkgs rel"><tbody>{{ release_rows(releases[20:]) }}</tbody></table>
+        </div>
+      </details>
+      {% endif %}
+    </section>
+    {% endif %}
+
+    {% if pypi_files %}
+    <section id="pypi-files" class="pkg-section" aria-labelledby="pypi-files-title">
+      <h2 id="pypi-files-title" class="pkg-section__title">Download files <span class="pkg-section__count">{{ shown_version }}</span></h2>
+      <p class="note note--tight">Downloading goes through this server: a file that is not stored yet is fetched from PyPI once and kept.</p>
+      <div class="table-wrap">
+        <table class="pkgs files">
+          <caption class="visually-hidden">Files of {{ display_name }} {{ shown_version }} on PyPI</caption>
+          <thead><tr><th scope="col" class="c-name">Filename</th><th scope="col" class="c-type">Type</th><th scope="col" class="c-size num">Size</th><th scope="col" class="c-updated num">Uploaded</th><th scope="col" class="c-hash">SHA-256</th><th scope="col" class="c-get"><span class="visually-hidden">Download</span></th></tr></thead>
+          <tbody>
+            {% for f in pypi_files %}
+            <tr>
+              <th scope="row" class="c-name file-name">{{ f.filename }}{% if f.stored %} <span class="src" title="Stored on this server"><span class="led led--cached" aria-hidden="true"></span><span class="src__text">here</span></span>{% endif %}{% if f.yanked %} <span class="badge-ph badge-ph--warn">Yanked</span>{% endif %}</th>
+              <td class="c-type">{{ {'sdist': 'Source', 'bdist_wheel': 'Wheel'}.get(f.packagetype, 'Other') }}{% if f.python_version and f.packagetype == 'bdist_wheel' %} <span class="muted">{{ f.python_version }}</span>{% endif %}</td>
+              <td class="c-size num">{{ f.size|filesize }}</td>
+              <td class="c-updated num">{% if f.uploaded %}<time datetime="{{ f.uploaded }}" title="{{ f.uploaded|iso_text }}">{{ f.uploaded|iso_date }}</time>{% endif %}</td>
+              <td class="c-hash">{% if f.sha256 %}<code class="hash" title="{{ f.sha256 }}">{{ f.sha256[:12] }}</code>{% endif %}</td>
+              <td class="c-get">{% if f.href %}<a class="dl" href="{{ f.href }}" download>{{ icon('download') }}<span class="visually-hidden">Download {{ f.filename }}</span></a>{% endif %}</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </section>
+    {% endif %}
+    {% endif %}
+
+    <section id="files" class="pkg-section" aria-labelledby="files-title">
+      <h2 id="files-title" class="pkg-section__title">Files on this server <span class="pkg-section__count">{{ pkg.files|length }}</span></h2>
+      <div class="table-wrap">
+        <table class="pkgs files">
+          <caption class="visually-hidden">Files of {{ display_name }} stored on this server</caption>
+          <thead>
+            <tr>
+              <th scope="col" class="c-name">Filename</th>
+              <th scope="col" class="c-type">Type</th>
+              <th scope="col" class="c-source">Source</th>
+              <th scope="col" class="c-size num">Size</th>
+              <th scope="col" class="c-updated num">Added</th>
+              <th scope="col" class="c-get"><span class="visually-hidden">Download</span></th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for f in files %}
+            <tr>
+              <th scope="row" class="c-name file-name">{{ f.filename }}</th>
+              <td class="c-type">{{ {'wheel': 'Wheel', 'sdist': 'Source', 'other': 'Other'}[f.kind] }}</td>
+              <td class="c-source">{{ source_marks([f.source]) }}</td>
+              <td class="c-size num">{{ f.size|filesize }}</td>
+              <td class="c-updated num"><time datetime="{{ f.created_at|utc_iso }}" title="{{ f.created_at|utc_text }}">{{ f.created_at|ago }}</time></td>
+              <td class="c-get">
+                <a class="dl" href="{{ url_for('serve_package' if f.source == 'local' else 'serve_cached', package=f.directory, filename=f.filename) }}" download>
+                  {{ icon('download') }}<span class="visually-hidden">Download {{ f.filename }}</span>
+                </a>
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      <div class="list-foot">
+        <p class="list-foot__range">Showing {{ first }} to {{ last }} of {{ pkg.files|length }}</p>
+        {{ pager(page, pages, numbers, page_url, 'File list pages') }}
+      </div>
+    </section>
   </div>
-</section>
+</div>
 {% endblock %}

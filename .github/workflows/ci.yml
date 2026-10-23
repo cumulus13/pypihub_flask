@@ -50,6 +50,68 @@ jobs:
       - name: Run tests
         run: python -m pytest
 
+  test-databases:
+    name: Tests (PostgreSQL, MySQL, Redis)
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: pypihub
+          POSTGRES_PASSWORD: pypihub
+          POSTGRES_DB: pypihub
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U pypihub -d pypihub"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+      mysql:
+        image: mysql:8.0
+        env:
+          MYSQL_ROOT_PASSWORD: root
+          MYSQL_USER: pypihub
+          MYSQL_PASSWORD: pypihub
+          MYSQL_DATABASE: pypihub
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd "mysqladmin ping -h 127.0.0.1 -uroot -proot"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 12
+    env:
+      PYPIHUB_TEST_POSTGRES_URL: postgresql://pypihub:pypihub@127.0.0.1:5432/pypihub
+      PYPIHUB_TEST_MYSQL_URL: mysql://pypihub:pypihub@127.0.0.1:3306/pypihub
+      PYPIHUB_TEST_REDIS_URL: redis://127.0.0.1:6379/0
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: requirements*.txt
+      - name: Install dependencies
+        run: python -m pip install -r requirements-dev.txt
+      - name: Whole suite with PostgreSQL as the application database
+        env:
+          PYPIHUB_TEST_DATABASE_URL: postgresql://pypihub:pypihub@127.0.0.1:5432/pypihub
+        run: python -m pytest
+      - name: Whole suite with MySQL as the application database
+        env:
+          PYPIHUB_TEST_DATABASE_URL: mysql://pypihub:pypihub@127.0.0.1:3306/pypihub
+        run: python -m pytest
+
   package:
     name: Build and install the wheel
     runs-on: ubuntu-latest
@@ -63,13 +125,19 @@ jobs:
           python -m pip install build twine
           python -m build
           twine check --strict dist/*
-      - name: Install the wheel into a clean virtualenv and smoke test it
+      - name: Install the wheel with the minimal extra and smoke test it
         run: |
-          python -m venv "$RUNNER_TEMP/venv"
-          "$RUNNER_TEMP/venv/bin/python" -m pip install "$(ls dist/*.whl)[flask]"
+          python -m venv "$RUNNER_TEMP/venv-minimal"
+          "$RUNNER_TEMP/venv-minimal/bin/python" -m pip install "$(ls dist/*.whl)[flask]"
           cd "$RUNNER_TEMP"
-          "$RUNNER_TEMP/venv/bin/python" "$GITHUB_WORKSPACE/.github/scripts/smoke_wheel.py"
-          "$RUNNER_TEMP/venv/bin/pypihub" --version
+          "$RUNNER_TEMP/venv-minimal/bin/python" "$GITHUB_WORKSPACE/.github/scripts/smoke_wheel.py" minimal
+          "$RUNNER_TEMP/venv-minimal/bin/pypihub" --version
+      - name: Install the wheel with every extra and smoke test it
+        run: |
+          python -m venv "$RUNNER_TEMP/venv-full"
+          "$RUNNER_TEMP/venv-full/bin/python" -m pip install "$(ls dist/*.whl)[all]"
+          cd "$RUNNER_TEMP"
+          "$RUNNER_TEMP/venv-full/bin/python" "$GITHUB_WORKSPACE/.github/scripts/smoke_wheel.py" full
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: dist

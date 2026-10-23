@@ -43,7 +43,8 @@ LABEL org.opencontainers.image.title="PyPihub" \
       org.opencontainers.image.source="https://github.com/cumulus13/pypihub_flask" \
       org.opencontainers.image.licenses="LGPL-3.0-or-later"
 
-# All state lives in /data: uploaded packages, the PyPI cache, the user database and the config file.
+# All state lives in /data: uploaded packages, the PyPI cache, the config file and, by default, a SQLite database.
+# For PostgreSQL or MySQL set DATABASE_URL; for a cache and rate-limit counters shared by workers set REDIS_URL.
 ENV PATH="/opt/venv/bin:$PATH" \
     PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \

@@ -39,4 +39,10 @@ create_user_cli(os.environ["PYPIHUB_ADMIN_USER"], os.environ["PYPIHUB_ADMIN_PASS
 PY
 fi
 
+# Bring the package catalog in line with the files on disk (existing installs, restored backups, manual changes).
+# It is incremental and safe to run from several replicas at once.
+if [ "${PYPIHUB_REINDEX_ON_START:-1}" != "0" ]; then
+    pypihub reindex
+fi
+
 exec "$@"

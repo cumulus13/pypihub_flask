@@ -31,6 +31,11 @@ import os
 import sys
 import logging
 import secrets
+import hashlib
+import html
+import time
+import uuid
+from urllib.parse import quote
 from packaging.utils import canonicalize_name
 try:
     from . import logger as Logger
@@ -44,9 +49,7 @@ logger = Logger.setup_logging()
 
 # logger = logging.getLogger(__name__)
 
-import requests
 from flask import Flask, send_from_directory, request, abort, Response, jsonify, session#, redirect, url_for
-from bs4 import BeautifulSoup
 from pydebugger.debug import debug
 from configset import configset
 from pathlib import Path
@@ -71,8 +74,10 @@ else:
 
 try:
     from . import web as web_ui
-except ImportError:
-    import web as web_ui
+    from . import cache as cache_mod, catalog as catalog_mod, dist, limits, pypimeta, upstream as upstream_mod
+except ImportError:  # run as a script from inside the package directory
+    import web as web_ui  # type: ignore
+    import cache as cache_mod, catalog as catalog_mod, dist, limits, pypimeta, upstream as upstream_mod  # type: ignore
 
 from rich.console import Console
 from rich_argparse import RichHelpFormatter, _lazy_rich as rr
@@ -202,17 +207,35 @@ if not SECRET_KEY:
 app.config['SECRET_KEY'] = SECRET_KEY
 app.config['LOCAL_PKG_DIR'] = LOCAL_PKG_DIR
 app.config['CACHE_DIR'] = CACHE_DIR
-web_ui.init_app(app)
+
+REDIS_URL = os.getenv('REDIS_URL') or getattr(settings, 'REDIS_URL', None) or None
+KV_CACHE = cache_mod.make_cache(REDIS_URL)
+logger.info(f"Cache backend: {KV_CACHE.kind}")
+
+def _truthy(value):
+    return str(value or '').strip().lower() in ('1', 'true', 'yes', 'on')
+
+ALLOW_OVERWRITE = _truthy(os.getenv('PYPIHUB_ALLOW_OVERWRITE'))
+FILE_MAX_AGE = int(os.getenv('PYPIHUB_FILE_CACHE_SECONDS', '3600'))
+CACHE_MAX_BYTES = dist.parse_size(os.environ['PYPIHUB_CACHE_MAX_SIZE']) if os.getenv('PYPIHUB_CACHE_MAX_SIZE') else 0
+app.config['MAX_CONTENT_LENGTH'] = int(float(os.getenv('PYPIHUB_MAX_UPLOAD_MB', '200')) * 1024 * 1024)
+
+limiter = limits.init_limiter(app, REDIS_URL)
+guard_credentials = limits.apply_limits(limiter)
+UPSTREAM = upstream_mod.Upstream(PYPI_SIMPLE_URL, KV_CACHE)
 
 if database:
-    from sqlalchemy import create_engine
-    from sqlalchemy.orm import sessionmaker
+    from sqlalchemy import func
     from sqlalchemy.exc import SQLAlchemyError
 
     User = database.User
     Package = database.Package
 
     def get_db_url():
+        # A full URL wins over the separate settings below.
+        explicit = os.getenv('DATABASE_URL') or getattr(settings, 'DATABASE_URL', None)
+        if explicit:
+            return database.normalize_url(explicit)
         # Take config from Settings.co, Settings.ini, App.config, or ENV
         db_type = (
             getattr(settings, 'DB_TYPE', None)
@@ -269,36 +292,22 @@ if database:
             or os.getenv('DB_PORT')
         )
 
-        # Default port per type
-        if not db_port:
-            if db_type == 'postgres':
-                db_port = 5432
-            elif db_type == 'mysql':
-                db_port = 3306
-            else:
-                db_port = ''
+        return database.build_url(
+            db_type,
+            path=db_path,
+            name=db_name,
+            user=db_user,
+            password=db_pass,
+            host=db_host,
+            port=db_port,
+        )
 
-        # Compose SQLAlchemy URL
-        if db_type == 'sqlite':
-            db_url = f"sqlite:///{db_path}"
-        elif db_type == 'postgres':
-            db_url = f"postgresql://{db_user}:{db_pass}@{db_host}:{db_port}/{db_name}"
-        elif db_type == 'mysql':
-            db_url = f"mysql://{db_user}:{db_pass}@{db_host}:{db_port}/{db_name}"
-        else:
-            # return jsonify({"error": f"Unsupported DB_TYPE: {db_type}"}), 401
-            raise ValueError(f"Unsupported DB_TYPE: {db_type}")
-
-        return db_url
-
-    engine = create_engine(get_db_url(), echo=False, future=True)
-    SessionLocal = sessionmaker(bind=engine)
-    # database.Base.metadata.create_all(engine)
-    try:
-        database.Base.metadata.create_all(engine)
-    except SQLAlchemyError as e:
-        if "already exists" not in str(e):
-            raise
+    engine = database.make_engine(get_db_url())
+    SessionLocal = database.session_factory(engine)
+    database.init_db(engine)
+    CATALOG = catalog_mod.Catalog(SessionLocal, KV_CACHE)
+    META = pypimeta.MetaService(SessionLocal, KV_CACHE, UPSTREAM)
+    web_ui.init_app(app, CATALOG, KV_CACHE, META)
 
     import bcrypt
 
@@ -312,6 +321,13 @@ if database:
             logger.error(f"Password check error: {e}")
             return False
 
+if database:
+    def find_user(db, username):
+        # Compared in lower case on every database: MySQL is case-insensitive by default, PostgreSQL is not.
+        return db.query(User).filter(func.lower(User.username) == (username or '').strip().lower()).first()
+
+    _DUMMY_HASH = hash_password('timing-equaliser')
+
 def check_auth(username, password):
     if not username or not password:
         logger.warning("Username or password is empty")
@@ -319,8 +335,10 @@ def check_auth(username, password):
     if database:
         try:
             with SessionLocal() as db:
-                user = db.query(User).filter_by(username=username).first()
-                if user and check_password(password, user.password):
+                user = find_user(db, username)
+                # Always run bcrypt, so unknown names and wrong passwords take the same time.
+                password_ok = check_password(password, user.password if user else _DUMMY_HASH)
+                if user and password_ok:
                     return True
                 logger.warning("Invalid username or password (DB)")
                 return False
@@ -348,18 +366,14 @@ def authenticate():
     return resp
 
 def requires_auth(f):
-    debug("requires_auth")
-    logger.notice("run requires_auth")  # type: ignore
     @wraps(f)
     def decorated(*args, **kwargs):
         auth = request.authorization
-        debug(auth_user = auth.username if auth else None)
-        logger.debug(f"auth.username: {auth.username if auth else None}")
-
+        if not auth or not auth.username or not auth.password:
+            return authenticate()
+        logger.debug(f"auth.username: {auth.username}")
         try:
-            check = check_auth(auth.username, auth.password)  # type: ignore
-            logger.debug(f"check_auth: {check}")
-            if not auth or not check:
+            if not check_auth(auth.username, auth.password):
                 return authenticate()
         except Exception as e:
             logger.error(f"Authentication error: {e}")
@@ -369,171 +383,29 @@ def requires_auth(f):
         return f(*args, **kwargs)
     return decorated
 
-@app.route('/upload/<package>/', methods=['POST'])
-@requires_auth
-def upload_package(package):
-    file = request.files['file']
-    debug(file = file)
-    logger.debug(f"file: {file}")
-    logger.debug(f"file.filename: {file.filename}")
+def _plain(message, status=400):
+    return Response(message, status=status, content_type='text/plain')
 
-    save_path = os.path.join(LOCAL_PKG_DIR, package)
-    debug(save_path = save_path, is_dir = os.path.isdir(save_path))
-    logger.debug(f"save_path: {save_path}, is_dir: {os.path.isdir(save_path)}")
-    
-    os.makedirs(save_path, exist_ok=True)
-    file_path = os.path.join(save_path, file.filename)  # type: ignore
-    debug(file_path = file_path)  # type: ignore
-    logger.debug(f"file_path: {file_path}")  # type: ignore
-    file.save(file_path)  # type: ignore
-    logger.info(f"Uploaded {file.filename} to {file_path}")
 
+def current_user_id():
     user_id = session.get('user_id')
-    logger.warning(f"user_id: {user_id}")
-    logger.debug(f"database: {database}")
-
-    if database:
-        if not user_id and request.authorization and database:
-            with SessionLocal() as db2:
-                user = db2.query(User).filter_by(username=request.authorization.username).first()
-                logger.debug(f"user: {user}")
-                logger.debug(f"user.id: {user.id}")  # type: ignore
-
-                if user: user_id = user.id
+    if user_id or not database or not request.authorization:
+        return user_id
+    try:
         with SessionLocal() as db:
-            db.add(Package(name=package, source='upload', user_id=user_id))
-            db.commit()
-    web_ui.invalidate_cache()
-    return 'Uploaded', 200
+            user = find_user(db, request.authorization.username)
+            return user.id if user else None
+    except SQLAlchemyError as e:  # type: ignore
+        logger.error(f"Could not look up the uploading user: {e}")
+        return None
 
-@app.route('/upload/', methods=['POST'])
-@app.route('/', methods=['POST'])
-@requires_auth
-def twine_upload():
-    # Try to take files from several possible fields
-    file = (
-        request.files.get('file') or
-        request.files.get('content') or
-        request.files.get('distribution')
-    )
-    debug(file = file)
-    logger.warning(f"file: {file}")
-
-    if not file:
-        # Try to take from the first field if any
-        if request.files:
-            file = next(iter(request.files.values()))
-            debug(file = file)
-            logger.notice(f"file: {file}")  # type: ignore
-        else:
-            debug(error = "No file part in request [400]")
-            logger.error("No file part in request [400]")
-            # return "No file part", 400
-            return jsonify({"error": "No file part"}), 400
-
-    filename = file.filename
-    debug(filename = filename)
-    # Extract the name package (simple, can be better)
-    pkg_name = filename.split('-')[0].lower()  # type: ignore
-    debug(pkg_name = pkg_name)
-    logger.info(f"pkg_name: {pkg_name}")
-
-    save_path = os.path.join(LOCAL_PKG_DIR, pkg_name)
-    debug(save_path = save_path)
-    logger.info(f"save_path: {save_path}")
-    os.makedirs(save_path, exist_ok=True)
-    
-    file_path = os.path.join(save_path, filename)  # type: ignore
-    debug(file_path = file_path)
-    logger.info(f"file_path: {file_path}")
-    if os.path.isfile(file_path):
-        debug(error = f"File {filename} already exists in {save_path} [409]")
-        logger.warning(f"File {filename} already exists in {save_path} [409]")
-        # return jsonify({"error": f"File {filename} already exists"}), 409
-        return Response("File already exists", status=400, content_type="text/plain")
-
-    file.save(file_path)
-    logger.info(f"Uploaded {file.filename} to {file_path} (via twine)")
-    
-    web_ui.invalidate_cache()
-    return 'OK', 200
-
-@app.route('/packages/<package>/<filename>')
-def serve_package(package, filename):
-    local_path = os.path.join(LOCAL_PKG_DIR, package)
-    debug(local_path = local_path)
-    logger.debug(f"local_path: {local_path}")
-    
-    return send_from_directory(local_path, filename)
-
-@app.route('/cache/<package>/<filename>')
-def serve_cached(package, filename):
-    cache_path = os.path.join(CACHE_DIR, package)
-    debug(cache_path = cache_path)
-    logger.notice(f"cache_path: {cache_path}")  # type: ignore
-    os.makedirs(cache_path, exist_ok=True)
-    file_path = os.path.join(cache_path, filename)
-    debug(file_path = file_path, is_file = os.path.isfile(file_path))
-    logger.info(f"file_path: {file_path}, is_file: {os.path.isfile(file_path)}")
-
-    if os.path.exists(file_path):
-        # Sudah ada di cache, langsung serve
-        return send_from_directory(cache_path, filename)
-
-    # Find the URL File in Pypi Simple Index
-    r = requests.get(f"{PYPI_SIMPLE_URL}/{package}/")
-    debug(requests_status_code = r.status_code)
-    logger.notice(f"requests.get status_code: {r.status_code}")  # type: ignore
-    if r.status_code != 200:
-        debug(error = "Package not found on PyPI [404]")
-        logger.error("Package not found on PyPI [404]")
-        abort(404, description="Package not found on PyPI")
-    soup = BeautifulSoup(r.text, 'html.parser')
-    file_url = None
-    for a in soup.find_all('a'):
-        href = a.get('href')
-        if href and href.split('/')[-1].split('#')[0] == filename:
-            # Gunakan href langsung jika sudah absolut, jika relatif tambahkan domain
-            if href.startswith('http'):
-                file_url = href
-            else:
-                file_url = f"https://files.pythonhosted.org{href}"
-            break
-    debug(file_url = file_url)
-    logger.debug(f"file_url: {file_url}")
-    if not file_url:
-        debug(error = "File not found on PyPI [404]")
-        logger.error("File not found on PyPI [404]")
-        abort(404, description="File not found on PyPI")
-
-    # Stream Download from Pypi to Client and Disk in parallel
-    def generate():
-        with requests.get(file_url, stream=True) as resp:
-            if resp.status_code != 200:
-                debug(error = "Failed to download from PyPI [404]")
-                logger.error("Failed to download from PyPI [404]")
-                abort(404, description="Failed to download from PyPI")
-            with open(file_path, 'wb') as f:
-                for chunk in resp.iter_content(chunk_size=8192):
-                    if chunk:
-                        f.write(chunk)
-                        yield chunk
-                        
-        if database:
-            with SessionLocal() as db:
-                db.add(Package(name=package, source='pypi', user_id=None))
-                db.commit()
-
-    response = app.response_class(generate(), mimetype='application/octet-stream')
-    response.headers['Content-Disposition'] = f'attachment; filename={filename}'
-    return response
 
 def resolve_package_dir(root, package):
     """Name of the directory in ``root`` that holds ``package``.
 
     pip asks for the PEP 503 normalised name (``my-pkg``) while twine uploads create the
     directory from the file name (``my_pkg``). Fall back to the requested name when no
-    directory matches, which is what a first-time cache fill needs.
+    directory matches.
     """
     if package in ('.', '..'):
         abort(404, description="Package not found")
@@ -549,68 +421,305 @@ def resolve_package_dir(root, package):
     return package
 
 
+def dir_for(root, package):
+    """Existing directory for a project, or the normalised name for a new one."""
+    name = resolve_package_dir(root, package)
+    return name if os.path.isdir(os.path.join(root, name)) else dist.project_key(package)
+
+
+def _uploaded_file():
+    return (
+        request.files.get('file')
+        or request.files.get('content')
+        or request.files.get('distribution')
+        or next(iter(request.files.values()), None)
+    )
+
+
+def store_upload(file, project_name):
+    """Validate and store an uploaded distribution. Returns an error Response, or None on success."""
+    filename = file.filename or ''
+    if not dist.is_upload_filename(filename):
+        return _plain("Invalid file name. Use a .whl, .tar.gz or .zip file named with letters, digits, '.', '_', '+' and '-'.")
+    if not dist.valid_project_name(project_name):
+        return _plain("Invalid project name.")
+    declared = dist.project_from_filename(filename)
+    if declared and declared != dist.project_key(project_name):
+        return _plain(f"{filename} belongs to project '{declared}', not '{dist.project_key(project_name)}'.")
+
+    directory = dir_for(LOCAL_PKG_DIR, project_name)
+    target_dir = os.path.join(LOCAL_PKG_DIR, directory)
+    final = os.path.join(target_dir, filename)
+    if os.path.exists(final) and not ALLOW_OVERWRITE:
+        logger.warning(f"File {filename} already exists in {target_dir}")
+        return _plain("File already exists")
+
+    os.makedirs(target_dir, exist_ok=True)
+    temp = os.path.join(target_dir, f".{filename}.{uuid.uuid4().hex}.part")
+    digest, size = hashlib.sha256(), 0
+    try:
+        with open(temp, 'wb') as out:
+            for chunk in iter(lambda: file.stream.read(1024 * 1024), b''):
+                out.write(chunk)
+                digest.update(chunk)
+                size += len(chunk)
+        if size == 0:
+            return _plain("The uploaded file is empty.")
+        if ALLOW_OVERWRITE:
+            os.replace(temp, final)
+        else:
+            try:
+                os.link(temp, final)  # fails if the file appeared meanwhile, unlike a rename
+            except FileExistsError:
+                return _plain("File already exists")
+            except OSError:  # file system without hard links
+                if os.path.exists(final):
+                    return _plain("File already exists")
+                os.replace(temp, final)
+    finally:
+        try:
+            os.remove(temp)
+        except FileNotFoundError:
+            pass
+
+    user_id = current_user_id()
+    logger.info(f"Uploaded {filename} to {final}")
+    try:
+        CATALOG.record_file(directory, filename, 'local', size, digest.hexdigest(), uploaded_by=user_id)
+        with SessionLocal() as db:
+            db.add(Package(name=directory, source='upload', user_id=str(user_id) if user_id else None))
+            db.commit()
+    except Exception as e:  # the file is stored; `pypihub reindex` repairs the catalog
+        logger.error(f"Stored {filename} but could not record it in the database: {e}")
+    return None
+
+
+@app.route('/upload/<package>/', methods=['POST'])
+@guard_credentials
+@requires_auth
+def upload_package(package):
+    file = _uploaded_file()
+    if not file:
+        return _plain("No file part")
+    return store_upload(file, package) or ('Uploaded', 200)
+
+
+@app.route('/upload/', methods=['POST'])
+@app.route('/', methods=['POST'])
+@guard_credentials
+@requires_auth
+def twine_upload():
+    file = _uploaded_file()
+    if not file:
+        logger.error("No file part in request [400]")
+        return jsonify({"error": "No file part"}), 400
+    project = dist.project_from_filename(file.filename or '')
+    if not project:
+        return _plain("Cannot read the project name from the file name. Use a standard wheel or sdist name.")
+    return store_upload(file, project) or ('OK', 200)
+
+
+@app.route('/packages/<package>/<filename>')
+def serve_package(package, filename):
+    if not (dist.valid_project_name(package) and dist.valid_filename(filename)):
+        abort(404)
+    folder = os.path.join(LOCAL_PKG_DIR, resolve_package_dir(LOCAL_PKG_DIR, package))
+    return send_from_directory(folder, filename, max_age=FILE_MAX_AGE)
+
+
+_cache_full_logged = 0.0
+
+
+def cache_is_full():
+    """True when PYPIHUB_CACHE_MAX_SIZE is set and reached: new files are then streamed without being stored."""
+    global _cache_full_logged
+    if not CACHE_MAX_BYTES:
+        return False
+    try:
+        full = CATALOG.stats().cached_size >= CACHE_MAX_BYTES
+    except Exception as e:
+        logger.error(f"Could not read the cache size: {e}")
+        return False
+    if full and time.monotonic() - _cache_full_logged > 60:
+        _cache_full_logged = time.monotonic()
+        logger.warning("Cache is full (PYPIHUB_CACHE_MAX_SIZE): serving new files without storing them. Run `pypihub prune`.")
+    return full
+
+
+def stream_and_cache(upstream_response, entry, directory):
+    """Send an upstream file to the client while storing it.
+
+    The file is written to a temporary name and renamed only when it is complete and its hash
+    matches, so a half-downloaded or corrupt file is never served to the next client.
+    """
+    folder = os.path.join(CACHE_DIR, directory)
+    final = os.path.join(folder, entry.filename)
+    store = not cache_is_full()
+
+    def generate():
+        digest, size = hashlib.sha256(), 0
+        temp = out = None
+        complete = committed = False
+        try:
+            if store:
+                try:
+                    os.makedirs(folder, exist_ok=True)
+                    temp = os.path.join(folder, f".{entry.filename}.{uuid.uuid4().hex}.part")
+                    out = open(temp, 'wb')
+                except OSError as e:
+                    logger.error(f"Cannot cache {entry.filename}: {e}")
+                    out = None
+            for chunk in upstream_response.iter_content(chunk_size=64 * 1024):
+                if not chunk:
+                    continue
+                digest.update(chunk)
+                size += len(chunk)
+                if out is not None:
+                    try:
+                        out.write(chunk)
+                    except OSError as e:  # disk full: keep serving the client, stop storing
+                        logger.error(f"Cache write failed for {entry.filename}: {e}")
+                        out.close()
+                        out = None
+                yield chunk
+            complete = True
+        finally:
+            upstream_response.close()
+            if out is not None:
+                out.close()
+                if complete:
+                    if entry.sha256 and digest.hexdigest() != entry.sha256:
+                        logger.error(f"Hash mismatch for {entry.filename}: not cached")
+                    else:
+                        try:
+                            os.replace(temp, final)
+                            committed = True
+                        except OSError as e:
+                            logger.error(f"Could not store {entry.filename}: {e}")
+            if temp and not committed:
+                try:
+                    os.remove(temp)
+                except FileNotFoundError:
+                    pass
+            if committed:
+                try:
+                    CATALOG.record_file(directory, entry.filename, 'cached', size, digest.hexdigest())
+                    with SessionLocal() as db:
+                        db.add(Package(name=directory, source='pypi', user_id=None))
+                        db.commit()
+                except Exception as e:  # the file is stored; `pypihub reindex` repairs the catalog
+                    logger.error(f"Cached {entry.filename} but could not record it in the database: {e}")
+
+    response = app.response_class(generate(), mimetype='application/octet-stream')
+    response.headers['Content-Disposition'] = f'attachment; filename={entry.filename}'
+    response.headers['X-PyPihub-Cache'] = 'MISS'
+    length = upstream_response.headers.get('Content-Length')
+    if length and 'Content-Encoding' not in upstream_response.headers:
+        response.headers['Content-Length'] = length
+    return response
+
+
+@app.route('/cache/<package>/<filename>')
+def serve_cached(package, filename):
+    if not (dist.valid_project_name(package) and dist.valid_filename(filename)):
+        abort(404)
+    directory = dir_for(CACHE_DIR, package)
+    folder = os.path.join(CACHE_DIR, directory)
+    if os.path.isfile(os.path.join(folder, filename)):
+        return send_from_directory(folder, filename, max_age=FILE_MAX_AGE)
+
+    try:
+        entry = UPSTREAM.find(package, filename)
+    except upstream_mod.UpstreamError as e:
+        logger.error(f"Upstream index unavailable for {package}: {e}")
+        abort(502, description="The upstream index is unavailable. Try again shortly.")
+    if entry is None:
+        abort(404, description="File not found on the upstream index")
+    try:
+        upstream_response = UPSTREAM.open(entry.url)
+    except upstream_mod.UpstreamError as e:
+        logger.error(f"Upstream download failed for {filename}: {e}")
+        abort(502, description="The upstream download failed. Try again shortly.")
+    return stream_and_cache(upstream_response, entry, directory)
+
+
 @app.route('/simple/<package>/')
 def simple_index(package):
+    if not dist.valid_project_name(package):
+        abort(404, description="Package not found")
+    key = dist.project_key(package)
     local_name = resolve_package_dir(LOCAL_PKG_DIR, package)
-    cache_name = resolve_package_dir(CACHE_DIR, package)
-    local_path = os.path.join(LOCAL_PKG_DIR, local_name)
-    debug(local_path = local_path)
-    logger.debug(f"local_path: {local_path}")
-    cached_path = os.path.join(CACHE_DIR, cache_name)
-    debug(cached_path = cached_path)
-    logger.debug(f"cached_path: {cached_path}")
-    os.makedirs(cached_path, exist_ok=True)
-    links = []
-    found = False
+    cache_name = dir_for(CACHE_DIR, package)
 
-    # Local files
-    if os.path.exists(local_path):
-        for f in os.listdir(local_path):
-            links.append(f'<a href="/packages/{local_name}/{f}">{f}</a>')
-            found = True
+    try:
+        known_hashes = CATALOG.hashes(key)
+    except Exception as e:
+        logger.warning(f"Could not read file hashes from the database: {e}")
+        known_hashes = {}
 
-    # Cached files
-    if os.path.exists(cached_path):
-        for f in os.listdir(cached_path):
-            links.append(f'<a href="/cache/{cache_name}/{f}">{f}</a>')
-            found = True
+    upstream_files, upstream_failed = [], False
+    try:
+        upstream_files = UPSTREAM.files(package) or []
+    except upstream_mod.UpstreamError as e:
+        upstream_failed = True
+        logger.error(f"Upstream index unavailable for {package}: {e}")
+    upstream_by_name = {u.filename: u for u in upstream_files}
 
-    # Fetch from PyPI (hanya generate link, TIDAK download)
-    r = requests.get(f"{PYPI_SIMPLE_URL}/{package}/")
-    debug(requests_status_code = r.status_code)
-    logger.notice(f"requests.get status_code: {r.status_code}")  # type: ignore
-    if r.status_code == 200:
-        soup = BeautifulSoup(r.text, 'html.parser')
-        for a in soup.find_all('a'):
-            href = a.get('href')
-            if not href:
-                continue
-            filename = href.split('/')[-1].split('#')[0]
-            # Ambil hash jika ada
-            hash_fragment = ''
-            if '#' in href:
-                hash_fragment = href[href.index('#'):]
-            # If not in local/cache, add link to/cache/with hash
-            if not os.path.exists(os.path.join(local_path, filename)) and not os.path.exists(os.path.join(cached_path, filename)):
-                links.append(f'<a href="/cache/{cache_name}/{filename}{hash_fragment}">{filename}</a>')
-                found = True
-    else:
-        if not found:
-            debug(error = "Package not found [404]")
-            logger.error("Package not found [404]")
-            abort(404, description="Package not found")
+    def anchor(prefix, directory, filename, sha256=None, info=None):
+        href = f"{prefix}/{quote(directory)}/{quote(filename)}"
+        if sha256:
+            href += f"#sha256={sha256}"
+        attrs = ''
+        if info is not None and info.requires_python:
+            attrs += f' data-requires-python="{html.escape(info.requires_python, quote=True)}"'
+        if info is not None and info.yanked is not None:
+            attrs += f' data-yanked="{html.escape(info.yanked, quote=True)}"'
+        return f'<a href="{html.escape(href, quote=True)}"{attrs}>{html.escape(filename)}</a><br/>'
 
-    html = f"<html><body>{''.join(links)}</body></html>"
-    return html
+    links, seen = [], set()
+    for source, root, directory, prefix in (
+        ('local', LOCAL_PKG_DIR, local_name, '/packages'),
+        ('cached', CACHE_DIR, cache_name, '/cache'),
+    ):
+        folder = os.path.join(root, directory)
+        try:
+            names = sorted(os.listdir(folder))
+        except OSError:
+            continue
+        for name in names:
+            if name in seen or not dist.valid_filename(name) or not os.path.isfile(os.path.join(folder, name)):
+                continue  # also hides the .part files of downloads in progress
+            info = upstream_by_name.get(name) if source == 'cached' else None
+            sha = known_hashes.get((source, name)) or (info.sha256 if info else None)
+            links.append(anchor(prefix, directory, name, sha, info))
+            seen.add(name)
+
+    for entry in upstream_files:
+        if entry.filename not in seen and dist.valid_filename(entry.filename):
+            links.append(anchor('/cache', cache_name, entry.filename, entry.sha256, entry))
+
+    if not links:
+        if upstream_failed:
+            abort(502, description="The upstream index is unavailable. Try again shortly.")
+        abort(404, description="Package not found")
+
+    page = (
+        '<!DOCTYPE html><html><head><meta name="pypi:repository-version" content="1.0">'
+        f'<title>Links for {html.escape(key)}</title></head><body><h1>Links for {html.escape(key)}</h1>'
+        + ''.join(links)
+        + '</body></html>'
+    )
+    return Response(page, mimetype='text/html')
 
 @app.route('/signin', methods=['GET', 'POST'])
+@guard_credentials
 def signin():
     if request.method == 'POST':
         username = request.form.get('username')
         password = request.form.get('password')
         if database:
             with SessionLocal() as db:
-                user = db.query(User).filter_by(username=username).first()
+                user = find_user(db, username)
                 if user and check_password(password, user.password):
                     session['user_id'] = user.id
                     return jsonify({"message": "Sign in successful"})
@@ -630,11 +739,14 @@ def signout():
     return jsonify({"message": "Signed out"})
 
 def create_user_cli(username=None, password=None):
-    username = username or input("Username: ")
+    username = (username or input("Username: ")).strip()
     password = password or getpass("Password: ")
+    if not username or len(username) > 150:
+        console.print("\n ❌ [bold red]The username must be 1 to 150 characters.[/]")
+        return
     if database:
         with SessionLocal() as db:
-            user = db.query(User).filter_by(username=username).first()
+            user = find_user(db, username)
             if user:
                 # If user exists and password is provided, update password
                 if password:
@@ -678,6 +790,9 @@ def version():
             if hasattr(version_module, 'version'):
                 return f"[black on #00FFFF]{str(version_module.version)}[/]"
             break  # break here is not necessary, as return already exits the function
+    installed = web_ui.get_version()
+    if installed != 'dev':
+        return f"[black on #00FFFF]{installed}[/]"
     return f"[white on blue]UNKNOWN VERSION[/]"
 
 def usage():
@@ -751,10 +866,17 @@ def usage():
     
     parser.add_argument(
         'command',
-        help='Command to run: serve (default), user (manage users)',
+        help='Command to run: serve (default), user (manage users), reindex (rebuild the package catalog from disk), prune (shrink the cache)',
         nargs='?',
         default='serve',
-        choices=['serve', 'user']
+        choices=['serve', 'user', 'reindex', 'prune']
+    )
+
+    parser.add_argument(
+        '--max-size',
+        type=str,
+        default=None,
+        help='Size the cache may keep, e.g. 20GB or 512MiB (prune command). The oldest cached files are deleted first.'
     )
     
     parser.add_argument(
@@ -849,12 +971,32 @@ def usage():
         debug(f"start server on {app.config['HOST']}:{app.config['PORT']}")    
         logger.notice(f"start server on {app.config['HOST']}:{app.config['PORT']}")  # type: ignore
 
+        if CATALOG.is_empty():
+            counts = CATALOG.reindex(LOCAL_PKG_DIR, CACHE_DIR)
+            console.print(f"[bold blue]Indexed existing files: {counts['added']} added[/]")
+
         app.run(
             host=args.host,
             port=args.port,
             debug=True if args.verbose else False,
             use_reloader=False  # Disable reloader to avoid multiple instances
         )
+    elif args.command == 'reindex':
+        counts = CATALOG.reindex(LOCAL_PKG_DIR, CACHE_DIR)
+        console.print(f"[bold green]Catalog updated:[/] {counts['added']} added, {counts['updated']} updated, {counts['removed']} removed")
+        return
+    elif args.command == 'prune':
+        if not args.max_size:
+            console.print("[bold red]--max-size is required, for example: pypihub prune --max-size 20GB[/]")
+            return
+        try:
+            limit = dist.parse_size(args.max_size)
+        except ValueError as e:
+            console.print(f"[bold red]{e}[/]")
+            return
+        result = CATALOG.prune_cache(CACHE_DIR, limit)
+        console.print(f"[bold green]Cache pruned:[/] {result['removed']} files deleted, {result['freed']:,} bytes freed, {result['remaining']:,} bytes remain")
+        return
     elif args.command == 'user':
         if args.list:
             return list_user()
