@@ -63,6 +63,8 @@ flowchart TB
 
 [![Architecture: components](https://i.ibb.co/zD2S4Vk/architecture-components.png)](https://i.ibb.co/zD2S4Vk/architecture-components.png)
 
+[![Architecture 0](https://i.ibb.co/Kp08Bxs3/pypihub-architecture4.jpg)](https://i.ibb.co/Kp08Bxs3/pypihub-architecture4.jpg)
+
 [![Architecture 1](https://i.ibb.co/nMmXnfLS/architecture1.jpg)](https://i.ibb.co/nMmXnfLS/architecture1.jpg)
 
 The files on disk are what pip downloads. The database is an index of them (so a page of the package list is one SQL
@@ -569,6 +571,8 @@ For issues and questions, please create/open an issue in the repository or conta
 **PyPihub** - Simplifying local Python package management
 
 `Warning: Do not expose this server to the public internet without proper authentication and security measures.`
+
+---
 
 ## 👤 Author
         
