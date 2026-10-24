@@ -122,6 +122,9 @@ flowchart LR
   <a href="https://i.ibb.co/mVVr09Cs/pypihub-screenshot2.png" target="_blank">
     <img src="https://i.ibb.co/mVVr09Cs/pypihub-screenshot2.png" width="98%" alt="Screenshot 2">
   </a>
+  <a href="https://i.ibb.co/TxjmB6Df/pypihub-screenshot3.png" target="_blank">
+    <img src="https://i.ibb.co/TxjmB6Df/pypihub-screenshot3.png" width="98%" alt="Screenshot 3">
+  </a>
 </p>
 
 
