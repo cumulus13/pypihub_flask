@@ -11,7 +11,7 @@ git+https://github.com/cumulus13/pydebugger2
 git+https://github.com/cumulus13/rich
 rich-argparse
 packaging>=20.9
-psycopg[binary]>=3.1
+psycopg[binary]>=3.3.6
 PyMySQL>=1.1
 cryptography
 redis>=5
