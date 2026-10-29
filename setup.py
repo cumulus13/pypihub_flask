@@ -34,6 +34,7 @@ setup(
         "rich",
         "rich-argparse",
         "configset",
+        "envdot"
     ],
     extras_require={
         # What the Flask server needs to run (SQLite works out of the box).
