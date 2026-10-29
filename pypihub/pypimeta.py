@@ -14,8 +14,10 @@ They come from the upstream's JSON API, are reduced to the fields the page uses,
 * the database (table ``pypi_meta``), which survives restarts and is the fallback while the upstream is down;
 * a cache (Redis when configured, otherwise a small in-process one) for the hot path.
 
-A copy is used for ``PYPIHUB_META_TTL`` seconds (default 6 hours), then refreshed. If the refresh fails, the older
-copy is shown with a note instead of an error. Only projects that PyPihub stores are ever looked up, so strangers
+A copy is used for ``PYPIHUB_META_TTL`` seconds (default 6 hours), then re-checked. The re-check sends the ETag
+stored with the copy: if PyPI answers 304 (unchanged, no body) only the timestamp moves; the document is downloaded,
+reduced and rendered again only when it really changed. If the check fails, the older copy is shown with a note
+instead of an error. Only projects that PyPihub stores are ever looked up, so strangers
 cannot make the database grow by asking for random names.
 
     PYPIHUB_META_TTL           seconds a copy is considered fresh (default 21600)
@@ -291,8 +293,9 @@ class MetaService:
                     result = self._from_row(row, "fresh" if row.status == "ok" else "missing")
                     self._remember(kv_key, result, limit - age)
                     return result
+            etag = self._stored_etag(row)
             try:
-                result = self._fetch(key, version)
+                result = self._fetch(key, version, etag)
             except UpstreamError as exc:
                 log.warning("Could not refresh details for %s %s: %s", key, version or "(latest)", exc)
                 if row is not None and row.status == "ok":
@@ -300,21 +303,41 @@ class MetaService:
                 if row is not None:
                     return self._from_row(row, "missing")
                 return MetaResult(None, "unavailable")
+            if result is None:  # 304: PyPI says our copy is still current
+                self._touch(key, version)
+                result = self._from_row(row, "fresh")
+                result.fetched_at = utcnow()
+                self._remember(kv_key, result, self._ttl)
+                return result
             self._store(key, version, result)
             self._remember(kv_key, result, self._ttl if result.state == "fresh" else self._missing_ttl)
             return result
 
     # -- upstream -----------------------------------------------------------
 
-    def _fetch(self, key: str, version: str) -> MetaResult:
+    @staticmethod
+    def _stored_etag(row: Optional[PypiMeta]) -> Optional[str]:
+        if row is None or row.status != "ok" or not row.data:
+            return None
+        try:
+            return json.loads(row.data).get("_etag")
+        except ValueError:
+            return None
+
+    def _fetch(self, key: str, version: str, etag: Optional[str] = None) -> Optional[MetaResult]:
+        """A new result, or None when ``etag`` says the stored copy is still current."""
         url = self._upstream.json_url(key, version or None)
-        status, document = self._upstream.get_json(url)
+        status, document, new_etag = self._upstream.get_json(url, etag)
+        if status == 304:
+            return None
         if status == 404:
             return MetaResult(None, "missing", utcnow())
         try:
             data = curate(document, with_releases=not version)
         except (KeyError, TypeError, AttributeError) as exc:
             raise UpstreamError(f"unexpected document from {url}: {exc!r}") from exc
+        if new_etag:
+            data["_etag"] = new_etag  # kept with the data, so no extra column and no schema change
         return MetaResult(data, "fresh", utcnow())
 
     # -- database -----------------------------------------------------------
@@ -352,6 +375,17 @@ class MetaService:
                     session.commit()
         except SQLAlchemyError as exc:
             log.error("Could not store details for %s: %s", key, exc)
+
+    def _touch(self, key: str, version: str) -> None:
+        """The stored copy was confirmed current: restart its freshness period without rewriting the document."""
+        try:
+            with self._session() as session:
+                session.execute(
+                    update(PypiMeta).where(PypiMeta.project_key == key, PypiMeta.version == version).values(fetched_at=utcnow())
+                )
+                session.commit()
+        except SQLAlchemyError as exc:
+            log.error("Could not update the stored details for %s: %s", key, exc)
 
     def _remember(self, kv_key: str, result: MetaResult, ttl: float) -> None:
         if ttl > 0:

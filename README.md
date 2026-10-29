@@ -328,7 +328,9 @@ Every setting can be an environment variable.
 | `SECRET_KEY` | random per process | Signs sign-in cookies. Set it when running more than one worker (the Docker image keeps one in the volume) |
 | `PYPI_SIMPLE_URL` | `https://pypi.org/simple` | Upstream index. The JSON API for package pages is derived from it, or set `PYPI_JSON_URL` |
 | `PYPIHUB_META`, `PYPIHUB_META_TTL` | on, 21600 | Package page details from PyPI: switch, and seconds before a refresh |
-| `PYPIHUB_UPSTREAM_TTL` | 300 | Seconds a project's file list is reused |
+| `PYPIHUB_META_MISSING_TTL` | 3600 | Seconds "PyPI does not know this package" is remembered |
+| `PYPIHUB_UPSTREAM_TTL` | 300 | Seconds a project's file list is reused before it is re-checked |
+| `PYPIHUB_UPSTREAM_STALE_TTL` | 86400 | Seconds an older file list may still be used while PyPI is failing |
 | `PYPIHUB_UPSTREAM_TIMEOUT` | `3.05,20` | Connect and read timeout towards PyPI, in seconds |
 | `PYPIHUB_UPSTREAM_BACKOFF` | 15 | After a failure, seconds to answer from stored copies instead of waiting on PyPI again |
 | `PYPIHUB_CACHE_MAX_SIZE` | unlimited | e.g. `100GB`. At the limit new downloads are streamed but not stored |
@@ -339,7 +341,51 @@ Every setting can be an environment variable.
 | `PYPIHUB_TRUST_PROXY` | off | Set to `1` behind a reverse proxy, so client addresses and links use `X-Forwarded-*` |
 | `PYPIHUB_UI_PER_PAGE` | 30 | Packages per page |
 
+## What is stored where
+
+| Data | Stored in | For how long |
+|---|---|---|
+| Accounts | database | until changed |
+| One row per stored file (name, version, size, SHA-256, source, date) | database | until the file is deleted, `reindex` or `prune`. Written when a file is uploaded or cached |
+| Package counters on the home page | cache | 10 seconds, and dropped at once when a file is added |
+| **Package details copied from PyPI** (README, links, classifiers, dependencies, release history) | **database** (durable) **and cache** (hot copy) | Fresh for `PYPIHUB_META_TTL` (6 h). Then re-checked with the ETag (see below). If PyPI cannot be reached the database copy is shown with a note, with no time limit. "Not on PyPI" is remembered for 1 h |
+| PyPI's file list for a project (for `/simple/`) | cache only | Fresh for 5 min (`PYPIHUB_UPSTREAM_TTL`), then re-checked with the ETag. The last copy is kept 24 h to use while PyPI fails. "Not found" 60 s |
+| "PyPI failed a moment ago" flag | cache | 15 s (`PYPIHUB_UPSTREAM_BACKOFF`) |
+| Rate-limit counters | cache | the window of each limit |
+| The package files | disk (`packages/`, `cache/`) | until removed |
+
+"Cache" is **Redis when `REDIS_URL` is set**. Otherwise it is a small in-memory cache inside each worker process:
+it is lost on restart and not shared between workers. Nothing important lives only there, because details are also in
+the database, so a restart does not send the server back to PyPI for packages it already knows.
+
+**How a change on PyPI is noticed.** PyPI has no push notification, so PyPihub asks, cheaply. Every document is stored
+with the `ETag` PyPI sent. When a copy expires the request carries `If-None-Match`; if nothing changed PyPI answers
+`304` with no body (measured on pypi.org: about 18 ms and 0 bytes for numpy, whose full document is 3.7 MB). Only when
+the ETag differs is the document downloaded, reduced to the fields the page uses (numpy: 3.7 MB to 49 kB), rendered
+and stored again. A new release therefore shows up within `PYPIHUB_META_TTL` on package pages and within
+`PYPIHUB_UPSTREAM_TTL` for `pip`. Files you upload, or that are cached, appear in the list at once. Files changed by hand
+on disk appear after `pypihub reindex`.
+
 ## Databases
+
+**A database is always on.** With no configuration PyPihub uses SQLite in `pypihub.db` in the data directory
+(`BASE_DIR`; `/data` in Docker). Redis is **off** until `REDIS_URL` is set.
+
+To use PostgreSQL or MySQL set one variable and start the server; the tables are created at startup:
+
+```bash
+export DATABASE_URL=postgresql://pypihub:secret@127.0.0.1:5432/pypihub
+export DATABASE_URL=mysql://pypihub:secret@127.0.0.1:3306/pypihub      # alternative
+export REDIS_URL=redis://127.0.0.1:6379/0                                # optional
+pip install "pypihub[all]"      # [postgres] or [mysql] and [redis] pull in only what you use
+```
+
+The database and the user must already exist (`CREATE DATABASE pypihub`); PyPihub creates the tables, not the
+database. Special characters in a password need no escaping when you use the separate settings below. The same
+values can also come from `settings.py` (`DATABASE_URL`, `DB_TYPE`, `DB_HOST`, ...), from `pypihub.ini` (`[database]`:
+`type`, `host`, `port`, `name`, `username`, `password`, `path`) or from the `DB_*` variables. Where more than one is
+set, `settings.py` wins over `pypihub.ini`, which wins over the environment; `DATABASE_URL` wins over all of them.
+`REDIS_URL` comes from the environment or `settings.py`.
 
 PyPihub uses SQLAlchemy and is tested on every change against **SQLite**, **PostgreSQL 16** and **MySQL 8.0**
 (the whole test suite runs on each; see `.github/workflows/ci.yml`). Tables are created at startup, including when

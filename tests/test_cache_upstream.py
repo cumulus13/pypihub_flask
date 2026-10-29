@@ -87,9 +87,9 @@ def test_make_cache_picks_the_backend():
 # --------------------------------------------------------------------------
 
 class FakeResponse:
-    def __init__(self, status=200, json_body=None, text="", content_type="application/vnd.pypi.simple.v1+json", url="https://up.example/simple/pkg/"):
+    def __init__(self, status=200, json_body=None, text="", content_type="application/vnd.pypi.simple.v1+json", url="https://up.example/simple/pkg/", etag=None):
         self.status_code, self._json, self.text, self.url = status, json_body, text, url
-        self.headers = {"Content-Type": content_type}
+        self.headers = {"Content-Type": content_type, **({"ETag": etag} if etag else {})}
 
     def json(self):
         return self._json
@@ -202,8 +202,53 @@ def test_open_refuses_non_http_urls_and_reports_errors():
 
 def test_upstream_file_survives_a_json_round_trip():
     original = UpstreamFile("a.whl", "https://x/a.whl", "ab" * 32, ">=3", "")
-    assert Upstream._decode(Upstream._encode([original])) == [original]
-    assert Upstream._decode(Upstream._encode(None)) is None
+    assert Upstream._decode(Upstream._encode([original], '"tag"')) == ([original], '"tag"')
+    assert Upstream._decode(Upstream._encode(None)) == (None, None)
+
+
+def test_entries_written_before_etags_existed_are_still_readable():
+    legacy = json.dumps([{"filename": "a.whl", "url": "https://x/a.whl", "sha256": None, "requires_python": None, "yanked": None}])
+    files, etag = Upstream._decode(legacy)
+    assert [f.filename for f in files] == ["a.whl"] and etag is None
+    assert Upstream._decode("null") == (None, None)
+
+
+def test_a_refresh_asks_whether_the_list_changed_and_a_304_keeps_the_stored_one():
+    upstream, session = make(FakeResponse(json_body=JSON_BODY, etag='"v1"'), FakeResponse(status=304), ttl="0.05")
+    first = upstream.files("pkg")
+    time.sleep(0.15)  # the fresh copy expired, the stale one (and its ETag) did not
+    assert upstream.files("pkg") == first
+    assert "If-None-Match" not in session.calls[0][1]["headers"]
+    assert session.calls[1][1]["headers"]["If-None-Match"] == '"v1"'
+    assert upstream.files("pkg") == first and len(session.calls) == 2  # fresh again: no third request
+
+
+def test_a_changed_list_replaces_the_stored_one_and_its_etag():
+    changed = {"files": [{"filename": "pkg-3.0.tar.gz", "url": "https://files.example/pkg-3.0.tar.gz", "hashes": {}}]}
+    upstream, session = make(FakeResponse(json_body=JSON_BODY, etag='"v1"'), FakeResponse(json_body=changed, etag='"v2"'),
+                             FakeResponse(status=304), ttl="0.05")
+    upstream.files("pkg")
+    time.sleep(0.15)
+    assert [f.filename for f in upstream.files("pkg")] == ["pkg-3.0.tar.gz"]
+    time.sleep(0.15)
+    upstream.files("pkg")
+    assert session.calls[2][1]["headers"]["If-None-Match"] == '"v2"'
+
+
+def test_a_304_nobody_asked_for_is_an_error_not_an_empty_list():
+    upstream, _ = make(FakeResponse(status=304))
+    with pytest.raises(UpstreamError):
+        upstream.files("pkg")
+
+
+def test_get_json_sends_the_etag_and_reports_304():
+    upstream, session = make(FakeResponse(status=304))
+    assert upstream.get_json("https://up.example/pypi/pkg/json", '"abc"') == (304, None, '"abc"')
+    assert session.calls[0][1]["headers"]["If-None-Match"] == '"abc"'
+    ok, _ = make(FakeResponse(json_body={"info": {}}, etag='"new"'))
+    assert ok.get_json("https://up.example/pypi/pkg/json") == (200, {"info": {}}, '"new"')
+    gone, _ = make(FakeResponse(status=404))
+    assert gone.get_json("https://up.example/pypi/pkg/json", '"abc"') == (404, None, None)
 
 
 @pytest.mark.skipif(not REDIS_URL, reason="needs PYPIHUB_TEST_REDIS_URL")

@@ -185,20 +185,32 @@ def test_without_readme_renderer_installed_nothing_is_rendered(monkeypatch):
 # --------------------------------------------------------------------------
 
 class FakeUpstream:
+    """Speaks ETag like pypi.org: a conditional request for an unchanged document gets 304 and no body."""
+
     def __init__(self):
-        self.docs, self.calls, self.down, self.delay = {}, [], False, 0.0
+        self.docs, self.calls, self.sent, self.etags, self.down, self.delay = {}, [], [], {}, False, 0.0
+        self._revision = 0
 
     def json_url(self, project, version=None):
         return f"https://pypi.test/pypi/{project}/{version}/json" if version else f"https://pypi.test/pypi/{project}/json"
 
-    def get_json(self, url):
+    def change(self, url, doc):
+        """Publish a new version of a document: a new ETag comes with it."""
+        self._revision += 1
+        self.docs[url], self.etags[url] = doc, f'"rev-{self._revision}"'
+
+    def get_json(self, url, etag=None):
         self.calls.append(url)
+        self.sent.append(etag)
         time.sleep(self.delay)
         if self.down:
             raise UpstreamError("down")
         if url not in self.docs:
-            return 404, None
-        return 200, self.docs[url]
+            return 404, None, None
+        current = self.etags.setdefault(url, '"rev-0"')
+        if etag and etag == current:
+            return 304, None, etag
+        return 200, self.docs[url], current
 
 
 @pytest.fixture
@@ -242,7 +254,7 @@ def test_an_expired_copy_is_refreshed(service, monkeypatch):
     with service._session() as s:
         s.query(PypiMeta).update({"fetched_at": utcnow() - timedelta(hours=7)})
         s.commit()
-    service.fake.docs["https://pypi.test/pypi/demo/json"] = document(version="3.0")
+    service.fake.change("https://pypi.test/pypi/demo/json", document(version="3.0"))
     assert service.get("demo").data["version"] == "3.0" and len(service.fake.calls) == 2
 
 
@@ -336,3 +348,84 @@ def test_metaresult_round_trips_through_json():
     original = MetaResult({"a": 1}, "stale", utcnow())
     again = MetaResult.load(original.dump())
     assert (again.data, again.state, again.fetched_at) == (original.data, original.state, original.fetched_at)
+
+
+# --------------------------------------------------------------------------
+# Re-checking an expired copy: ETag, 304, and what is NOT redone
+# --------------------------------------------------------------------------
+
+def _expire(service, hours=7):
+    service._kv = MemoryCache()
+    with service._session() as db:
+        db.query(PypiMeta).update({"fetched_at": utcnow() - timedelta(hours=hours)})
+        db.commit()
+
+
+def _row(service, version=""):
+    with service._session() as db:
+        return db.query(PypiMeta).filter_by(project_key="demo", version=version).one()
+
+
+def test_the_etag_is_stored_with_the_copy(service):
+    service.get("demo")
+    assert json.loads(_row(service).data)["_etag"] == '"rev-0"'
+
+
+def test_an_unchanged_copy_costs_a_304_and_nothing_is_downloaded_parsed_or_rendered(service, monkeypatch):
+    service.get("demo")
+    before = _row(service)
+    renders = []
+    monkeypatch.setattr(pypimeta.readme, "render", lambda *a, **k: renders.append(1) or "<p>again</p>")
+    _expire(service)
+    result = service.get("demo")
+    assert result.state == "fresh" and result.data["version"] == "2.0" and result.data["description_html"] != "<p>again</p>"
+    assert service.fake.sent[-1] == '"rev-0"' and len(service.fake.calls) == 2  # asked "changed since this ETag?"
+    assert renders == []  # the README was not rendered again
+    after = _row(service)
+    assert after.data == before.data  # the stored document was not rewritten
+    assert (utcnow() - after.fetched_at).total_seconds() < 60  # but it counts as fresh again
+    calls = len(service.fake.calls)
+    service._kv = MemoryCache()
+    assert service.get("demo").state == "fresh" and len(service.fake.calls) == calls  # no second request
+
+
+def test_a_changed_document_is_downloaded_rendered_and_gets_its_new_etag(service, monkeypatch):
+    service.get("demo")
+    _expire(service)
+    service.fake.change("https://pypi.test/pypi/demo/json", document(version="3.0", description="# New release notes"))
+    result = service.get("demo")
+    assert result.data["version"] == "3.0" and "New release notes" in result.data["description_html"]
+    assert json.loads(_row(service).data)["_etag"] == '"rev-1"'
+
+
+def test_a_release_is_rechecked_with_its_own_etag(service):
+    service.get("demo")
+    service.get("demo", "2.0")
+    _expire(service)
+    service.fake.sent.clear()
+    assert service.get("demo", "2.0").state == "fresh"
+    assert service.fake.sent == ['"rev-0"']
+
+
+def test_no_etag_is_sent_for_a_first_fetch_or_after_a_missing_answer(service):
+    service.get("demo")
+    service.get("nothing")
+    assert service.fake.sent == [None, None]
+    _expire(service)
+    service.fake.sent.clear()
+    service.get("nothing")
+    assert service.fake.sent == [None]  # nothing was stored for it, so nothing to compare with
+
+
+def test_a_stored_copy_without_an_etag_is_just_fetched_in_full(service):
+    service.get("demo")
+    with service._session() as db:  # a row written before ETags were kept
+        row = db.query(PypiMeta).one()
+        data = json.loads(row.data)
+        data.pop("_etag")
+        row.data = json.dumps(data)
+        db.commit()
+    _expire(service)
+    service.fake.sent.clear()
+    assert service.get("demo").state == "fresh" and service.fake.sent == [None]
+    assert json.loads(_row(service).data)["_etag"] == '"rev-0"'  # and the ETag is kept from now on

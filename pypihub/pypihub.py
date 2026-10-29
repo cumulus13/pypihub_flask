@@ -29,6 +29,7 @@ For commercial licensing options, contact: cumulus13@gmail.com
 
 import os
 import sys
+from pathlib import Path
 import logging
 import secrets
 import hashlib
@@ -37,6 +38,22 @@ import time
 import uuid
 from urllib.parse import quote
 from packaging.utils import canonicalize_name
+
+env_candidates = (
+    Path(__file__).parent / '.env',
+    Path(__file__).parent.parent / '.env',
+)
+
+env_file = None
+for e in env_candidates:
+    if e.is_file():
+        env_file = e
+        break
+
+from envdot import load_env
+
+load_env(env_file)
+
 try:
     from . import logger as Logger
 except:
@@ -52,7 +69,7 @@ logger = Logger.setup_logging()
 from flask import Flask, send_from_directory, request, abort, Response, jsonify, session#, redirect, url_for
 from pydebugger.debug import debug
 from configset import configset
-from pathlib import Path
+import argparse
 from functools import wraps
 from getpass import getpass
 
@@ -97,9 +114,6 @@ class CustomRichHelpFormatter(RichHelpFormatter):
         "argparse.prog": "bold #00AAFF italic",
         "argparse.default": "bold",
     }
-
-import argparse
-from pathlib import Path
 
 class settings:
     #make this possbile/available like 'settings.var' then return value from 'var = value' in settings.py

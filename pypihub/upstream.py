@@ -12,6 +12,8 @@ Everything PyPihub asks of PyPI goes through here.
 * Every request has a timeout and a bounded retry, so a slow or dead upstream cannot hang a worker.
 * A project's file list is cached (``PYPIHUB_UPSTREAM_TTL``, default 300 s). A longer-lived copy is
   kept as well and used when the upstream is down, so already-known projects keep resolving.
+* Refreshing asks "has it changed?" with the ETag the upstream sent (``If-None-Match``). pypi.org answers
+  304 with an empty body in about 15 ms, where the full document can be hundreds of kB (numpy: 3.7 MB).
 * The JSON simple API (PEP 691) is used when the upstream offers it, with a fallback to HTML (PEP 503)
   for plain mirrors. ``requires-python`` and ``yanked`` are passed through so pip picks compatible releases.
 
@@ -51,6 +53,9 @@ ACCEPT = (
     "application/vnd.pypi.simple.v1+json, "
     "application/vnd.pypi.simple.v1+html;q=0.2, text/html;q=0.01"
 )
+
+
+NOT_MODIFIED = object()
 
 
 class UpstreamError(Exception):
@@ -178,17 +183,19 @@ class Upstream:
         key = project_key(project)
         fresh = self._cache.get(f"up:{key}")
         if fresh is not None:
-            return self._decode(fresh)
+            return self._decode(fresh)[0]
+        stale = self._cache.get(f"up-stale:{key}")
+        known, etag = self._decode(stale) if stale is not None else (None, None)
         try:
             self._check_breaker()
-            files = self._fetch(key)
+            outcome = self._fetch(key, etag if known is not None else None)
         except (requests.RequestException, UpstreamError) as exc:
-            stale = self._cache.get(f"up-stale:{key}")
-            if stale is not None:
+            if known is not None:
                 log.warning("Upstream failed for %s (%s); serving the stored file list", key, exc)
-                return self._decode(stale)
+                return known
             raise UpstreamError(str(exc)) from exc
-        encoded = self._encode(files)
+        files, etag = (known, etag) if outcome is NOT_MODIFIED else outcome
+        encoded = self._encode(files, etag)
         if files is None:
             self._cache.set(f"up:{key}", encoded, min(60.0, self._ttl))  # remember "not found" briefly
         else:
@@ -196,31 +203,40 @@ class Upstream:
             self._cache.set(f"up-stale:{key}", encoded, self._stale_ttl)
         return files
 
-    def _fetch(self, key: str) -> Optional[List[UpstreamFile]]:
+    def _fetch(self, key: str, etag: Optional[str] = None):
+        """``(files, etag)``, or NOT_MODIFIED when ``etag`` is still current."""
         url = f"{self._base}/{key}/"
+        headers = {"Accept": ACCEPT}
+        if etag:
+            headers["If-None-Match"] = etag
         try:
-            response = self._session.get(url, headers={"Accept": ACCEPT}, timeout=self._timeout)
+            response = self._session.get(url, headers=headers, timeout=self._timeout)
         except requests.RequestException as exc:
             self._trip(exc)
             raise
+        if response.status_code == 304 and etag:
+            return NOT_MODIFIED
         if response.status_code == 404:
-            return None
+            return None, None
         if response.status_code != 200:
             if response.status_code >= 500:
                 self._trip(f"{url} answered {response.status_code}")
             raise UpstreamError(f"{url} answered {response.status_code}")
+        new_etag = response.headers.get("ETag")
         if "json" in response.headers.get("Content-Type", ""):
-            return parse_json(response.json())
-        return parse_html(response.text, response.url)
+            return parse_json(response.json()), new_etag
+        return parse_html(response.text, response.url), new_etag
 
     @staticmethod
-    def _encode(files: Optional[List[UpstreamFile]]) -> str:
-        return json.dumps(None if files is None else [asdict(f) for f in files])
+    def _encode(files: Optional[List[UpstreamFile]], etag: Optional[str] = None) -> str:
+        return json.dumps({"etag": etag, "files": None if files is None else [asdict(f) for f in files]})
 
     @staticmethod
-    def _decode(raw: str) -> Optional[List[UpstreamFile]]:
+    def _decode(raw: str):
+        """``(files, etag)``. Also reads entries written before ETags were stored (a bare list or null)."""
         data = json.loads(raw)
-        return None if data is None else [UpstreamFile(**item) for item in data]
+        etag, items = (data.get("etag"), data.get("files")) if isinstance(data, dict) else (None, data)
+        return (None if items is None else [UpstreamFile(**item) for item in items]), etag
 
     def find(self, project: str, filename: str) -> Optional[UpstreamFile]:
         for item in self.files(project) or []:
@@ -240,22 +256,30 @@ class Upstream:
         key = project_key(project)
         return f"{base.rstrip('/')}/{key}/{version}/json" if version else f"{base.rstrip('/')}/{key}/json"
 
-    def get_json(self, url: str):
-        """``(200, document)`` or ``(404, None)``. Raises :class:`UpstreamError` on any other outcome."""
+    def get_json(self, url: str, etag: Optional[str] = None):
+        """``(status, document, etag)``: 200 with a document, 304 when ``etag`` is still current, or 404.
+
+        Raises :class:`UpstreamError` on any other outcome.
+        """
         self._check_breaker()
+        headers = {"Accept": "application/json"}
+        if etag:
+            headers["If-None-Match"] = etag
         try:
-            response = self._session.get(url, headers={"Accept": "application/json"}, timeout=self._timeout)
+            response = self._session.get(url, headers=headers, timeout=self._timeout)
         except requests.RequestException as exc:
             self._trip(exc)
             raise UpstreamError(str(exc)) from exc
+        if response.status_code == 304 and etag:
+            return 304, None, etag
         if response.status_code == 404:
-            return 404, None
+            return 404, None, None
         if response.status_code != 200:
             if response.status_code >= 500:
                 self._trip(f"{url} answered {response.status_code}")
             raise UpstreamError(f"{url} answered {response.status_code}")
         try:
-            return 200, response.json()
+            return 200, response.json(), response.headers.get("ETag")
         except ValueError as exc:
             raise UpstreamError(f"{url} did not return JSON") from exc
 
