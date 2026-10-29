@@ -12,7 +12,7 @@ git+https://github.com/cumulus13/rich
 rich-argparse
 packaging>=20.9
 psycopg[binary]>=3.1
-PyMySQL>=1.1
+PyMySQL>=1.2.3
 cryptography
 redis>=5
 readme_renderer[md]>=43
