@@ -266,7 +266,7 @@ class MetaService:
         self._ttl = _float_env("PYPIHUB_META_TTL", 21600)
         self._missing_ttl = _float_env("PYPIHUB_META_MISSING_TTL", 3600)
         self._locks = [threading.Lock() for _ in range(64)]
-        self._on = os.getenv("PYPIHUB_META", "1").strip().lower() not in ("0", "false", "no", "off")
+        self._on = os.getenv("PYPIHUB_META", "1")
 
     @property
     def enabled(self) -> bool:

@@ -81,7 +81,7 @@ def _float_env(name: str, default: float) -> float:
 def _timeout() -> Tuple[float, float]:
     raw = os.getenv("PYPIHUB_UPSTREAM_TIMEOUT", "3.05,20")
     try:
-        connect, read = (float(part) for part in raw.split(","))
+        connect, read = (float(part) for part in raw)
         return connect, read
     except ValueError:
         return 3.05, 20.0
