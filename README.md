@@ -61,11 +61,11 @@ flowchart TB
     V -. "README, links, releases" .-> X
 ```
 
-[![Architecture: components](https://i.ibb.co/zD2S4Vk/architecture-components.png)](https://i.ibb.co/zD2S4Vk/architecture-components.png)
+[![Architecture: components](https://raw.githubusercontent.com/licface15/images/refs/heads/main/pypihub_flask/architecture-components.png)](https://raw.githubusercontent.com/licface15/images/refs/heads/main/pypihub_flask/architecture-components.png)
 
-[![Architecture 0](https://i.ibb.co/Kp08Bxs3/pypihub-architecture4.jpg)](https://i.ibb.co/Kp08Bxs3/pypihub-architecture4.jpg)
+[![Architecture 0](https://raw.githubusercontent.com/licface15/images/refs/heads/main/pypihub_flask/pypihub_architecture4.jpg)](https://raw.githubusercontent.com/licface15/images/refs/heads/main/pypihub_flask/pypihub_architecture4.jpg)
 
-[![Architecture 1](https://i.ibb.co/nMmXnfLS/architecture1.jpg)](https://i.ibb.co/nMmXnfLS/architecture1.jpg)
+[![Architecture 1](https://raw.githubusercontent.com/licface15/images/refs/heads/main/pypihub_flask/pypihub_architecture1.jpg)](https://raw.githubusercontent.com/licface15/images/refs/heads/main/pypihub_flask/pypihub_architecture1.jpg)
 
 The files on disk are what pip downloads. The database is an index of them (so a page of the package list is one SQL
 query, not a directory scan) plus the accounts and the details copied from PyPI. `pypihub reindex` rebuilds the index
@@ -98,7 +98,7 @@ sequenceDiagram
     end
 ```
 
-[![Architecture 2](https://i.ibb.co/zTgqyw1b/pypihub-architecture2.jpg)](https://i.ibb.co/zTgqyw1b/pypihub-architecture2.jpg)
+[![Architecture 2](https://raw.githubusercontent.com/licface15/images/refs/heads/main/pypihub_flask/pypihub_architecture2.jpg)](https://raw.githubusercontent.com/licface15/images/refs/heads/main/pypihub_flask/pypihub_architecture2.jpg)
 
 Files you uploaded are served from `/packages/...` straight from disk and never touch PyPI.
 
@@ -113,17 +113,17 @@ flowchart LR
     PB --> PY[("PyPI<br/>trusted publishing")]
 ```
 
-[![Architecture 3](https://i.ibb.co/1G0HxgY4/pypihub-architecture3.jpg)](https://i.ibb.co/1G0HxgY4/pypihub-architecture3.jpg)
+[![Architecture 3](https://raw.githubusercontent.com/licface15/images/refs/heads/main/pypihub_flask/pypihub_architecture3.jpg)](https://raw.githubusercontent.com/licface15/images/refs/heads/main/pypihub_flask/pypihub_architecture3.jpg)
 
 <p align="center">
-  <a href="https://i.ibb.co/PZj0xJVv/pypihub-screenshot1.png" target="_blank">
-    <img src="https://i.ibb.co/PZj0xJVv/pypihub-screenshot1.png" width="98%" alt="Screenshot 1">
+  <a href="https://raw.githubusercontent.com/licface15/images/refs/heads/main/pypihub_flask/pypihub_screenshot1.png" target="_blank">
+    <img src="https://raw.githubusercontent.com/licface15/images/refs/heads/main/pypihub_flask/pypihub_screenshot1.png" width="98%" alt="Screenshot 1">
   </a>
-  <a href="https://i.ibb.co/mVVr09Cs/pypihub-screenshot2.png" target="_blank">
-    <img src="https://i.ibb.co/mVVr09Cs/pypihub-screenshot2.png" width="98%" alt="Screenshot 2">
+  <a href="https://raw.githubusercontent.com/licface15/images/refs/heads/main/pypihub_flask/pypihub_screenshot2.png" target="_blank">
+    <img src="https://raw.githubusercontent.com/licface15/images/refs/heads/main/pypihub_flask/pypihub_screenshot2.png" width="98%" alt="Screenshot 2">
   </a>
-  <a href="https://i.ibb.co/TxjmB6Df/pypihub-screenshot3.png" target="_blank">
-    <img src="https://i.ibb.co/TxjmB6Df/pypihub-screenshot3.png" width="98%" alt="Screenshot 3">
+  <a href="https://raw.githubusercontent.com/licface15/images/refs/heads/main/pypihub_flask/pypihub_screenshot3.png" target="_blank">
+    <img src="https://raw.githubusercontent.com/licface15/images/refs/heads/main/pypihub_flask/pypihub_screenshot3.png" width="98%" alt="Screenshot 3">
   </a>
 </p>
 
