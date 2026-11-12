@@ -91,10 +91,10 @@ else:
 
 try:
     from . import web as web_ui
-    from . import cache as cache_mod, catalog as catalog_mod, dist, limits, pypimeta, upstream as upstream_mod
+    from . import cache as cache_mod, catalog as catalog_mod, dist, limits, pkgstats, pypimeta, upstream as upstream_mod
 except ImportError:  # run as a script from inside the package directory
     import web as web_ui  # type: ignore
-    import cache as cache_mod, catalog as catalog_mod, dist, limits, pypimeta, upstream as upstream_mod  # type: ignore
+    import cache as cache_mod, catalog as catalog_mod, dist, limits, pkgstats, pypimeta, upstream as upstream_mod  # type: ignore
 
 from rich.console import Console
 from rich_argparse import RichHelpFormatter, _lazy_rich as rr
@@ -321,7 +321,8 @@ if database:
     database.init_db(engine)
     CATALOG = catalog_mod.Catalog(SessionLocal, KV_CACHE)
     META = pypimeta.MetaService(SessionLocal, KV_CACHE, UPSTREAM)
-    web_ui.init_app(app, CATALOG, KV_CACHE, META)
+    STATS = pkgstats.StatsService(SessionLocal, KV_CACHE, pkgstats.default_url(PYPI_SIMPLE_URL))
+    web_ui.init_app(app, CATALOG, KV_CACHE, META, STATS)
 
     import bcrypt
 

@@ -54,10 +54,10 @@ def clean(server):
             shutil.rmtree(child) if child.is_dir() else child.unlink()
     from sqlalchemy import delete
 
-    from pypihub.database import DistFile, Package, PypiMeta, User
+    from pypihub.database import DistFile, Package, PypiMeta, PypiStats, User
 
     with server.module.SessionLocal() as db:
-        for model in (DistFile, PypiMeta, Package, User):
+        for model in (DistFile, PypiMeta, PypiStats, Package, User):
             db.execute(delete(model))
         db.commit()
     server.module.KV_CACHE.delete("catalog:stats")

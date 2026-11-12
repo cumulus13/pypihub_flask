@@ -14,6 +14,12 @@ services:
       PYPIHUB_ADMIN_PASSWORD: "${PYPIHUB_ADMIN_PASSWORD:-}"
       PYPIHUB_TRUST_PROXY: "${PYPIHUB_TRUST_PROXY:-}"
       PYPI_SIMPLE_URL: "${PYPI_SIMPLE_URL:-https://pypi.org/simple}"
+      # Package page details and download counts: database fresh for 6 h, Redis keeps a hot copy for 1 h.
+      PYPIHUB_META_TTL: "${PYPIHUB_META_TTL:-21600}"
+      PYPIHUB_META_CACHE_TTL: "${PYPIHUB_META_CACHE_TTL:-3600}"
+      PYPIHUB_STATS: "${PYPIHUB_STATS:-1}"
+      PYPIHUB_STATS_TTL: "${PYPIHUB_STATS_TTL:-21600}"
+      PYPIHUB_STATS_CACHE_TTL: "${PYPIHUB_STATS_CACHE_TTL:-3600}"
     volumes:
       - pypihub-data:/data
 

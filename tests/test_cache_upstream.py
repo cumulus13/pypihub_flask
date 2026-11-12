@@ -328,3 +328,17 @@ def test_a_hung_upstream_costs_one_timeout_not_one_per_request():
     finally:
         server.close()
         os.environ["PYPIHUB_UPSTREAM_TIMEOUT"] = "3.05,20"
+
+
+@pytest.mark.parametrize("value, expected", [
+    ("1,2", (1.0, 2.0)),            # a plain environment: text
+    (["0.5", "7"], (0.5, 7.0)),     # envdot, which the app loads, has already turned it into a list
+    ([3, 9], (3.0, 9.0)),
+    ("nonsense", (3.05, 20.0)), ("1", (3.05, 20.0)), ("1,2,3", (3.05, 20.0)), (["a", "b"], (3.05, 20.0)),
+])
+def test_the_timeout_setting_is_understood_as_text_or_as_a_list(monkeypatch, value, expected):
+    from pypihub import upstream as upstream_mod
+
+    real = os.getenv
+    monkeypatch.setattr(os, "getenv", lambda name, default=None: value if name == "PYPIHUB_UPSTREAM_TIMEOUT" else real(name, default))
+    assert upstream_mod._timeout() == expected

@@ -540,6 +540,10 @@ a.badge-ph:hover { background: var(--ph-hover); }
 .chips { display: flex; flex-wrap: wrap; gap: 0.35rem; margin: 0.9rem 0 0; padding: 0; list-style: none; }
 .chip { padding: 0.05rem 0.6rem; border-radius: 999px; background: var(--ph-hover); font-size: 0.85rem; }
 .side-block--details summary { cursor: pointer; }
+.side-stats dd { font-weight: 700; font-variant-numeric: tabular-nums; }
+.side-stats__note { margin: 0.9rem 0 0; color: var(--ph-muted); font-size: 0.8rem; line-height: 1.4; }
+.spark { display: block; width: 100%; max-width: 14rem; height: auto; margin: 0.9rem 0 0; }
+.spark polyline { fill: none; stroke: var(--ph-accent); stroke-width: 1.75; stroke-linejoin: round; stroke-linecap: round; vector-effect: non-scaling-stroke; }
 .class-head { margin: 0.9rem 0 0.25rem; color: var(--ph-muted); font-size: 0.85rem; font-weight: 500; }
 .class-list { margin: 0; padding-left: 1rem; font-size: 0.9rem; }
 

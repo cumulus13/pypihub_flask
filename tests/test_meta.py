@@ -429,3 +429,113 @@ def test_a_stored_copy_without_an_etag_is_just_fetched_in_full(service):
     service.fake.sent.clear()
     assert service.get("demo").state == "fresh" and service.fake.sent == [None]
     assert json.loads(_row(service).data)["_etag"] == '"rev-0"'  # and the ETag is kept from now on
+
+
+# --------------------------------------------------------------------------
+# Two lifetimes: the cache (Redis) is shorter than the database
+# --------------------------------------------------------------------------
+
+from test_stats import RecordingCache  # noqa: E402
+
+
+@pytest.fixture
+def layered(engine, monkeypatch):
+    """Database copies are fresh for 6 hours, cache entries live for 1 hour."""
+    monkeypatch.setenv("PYPIHUB_META", "1")
+    monkeypatch.setenv("PYPIHUB_META_TTL", "21600")
+    monkeypatch.setenv("PYPIHUB_META_CACHE_TTL", "3600")
+    monkeypatch.setenv("PYPIHUB_META_MISSING_TTL", "3600")
+    upstream = FakeUpstream()
+    upstream.docs["https://pypi.test/pypi/demo/json"] = document()
+    svc = MetaService(database.session_factory(engine), MemoryCache(), upstream)
+    svc._kv = RecordingCache()  # what Redis would be
+    svc.fake = upstream
+    return svc
+
+
+def _age(service, hours):
+    """The database copy gets older, and the cache entry is gone, as if its hour had passed."""
+    service._kv = RecordingCache()
+    with service._session() as db:
+        db.query(PypiMeta).update({"fetched_at": utcnow() - timedelta(hours=hours)})
+        db.commit()
+
+
+def test_defaults_are_six_hours_in_the_database_and_one_hour_in_the_cache(engine, monkeypatch):
+    for name in ("PYPIHUB_META_TTL", "PYPIHUB_META_CACHE_TTL"):
+        monkeypatch.delenv(name, raising=False)
+    svc = MetaService(database.session_factory(engine), MemoryCache(), FakeUpstream())
+    assert svc._ttl == 21600 and svc._cache_ttl == 3600
+
+
+def test_the_cache_holds_a_copy_for_one_hour_although_the_database_copy_is_good_for_six(layered):
+    layered.get("demo")
+    assert layered._kv.ttl_of("meta:demo:") == 3600
+
+
+def test_when_the_cache_entry_expires_the_database_answers_and_pypi_is_not_asked(layered):
+    first = layered.get("demo")
+    layered._kv = RecordingCache()  # the hour is over
+    again = layered.get("demo")
+    assert again.state == "fresh" and again.data == first.data and len(layered.fake.calls) == 1
+    assert layered._kv.ttl_of("meta:demo:") == 3600  # refilled for another hour
+
+
+def test_the_cache_never_outlives_the_freshness_of_the_database_copy(layered):
+    layered.get("demo")
+    _age(layered, hours=5.5)  # half an hour of the six is left
+    layered.get("demo")
+    assert len(layered.fake.calls) == 1 and 1700 < layered._kv.ttl_of("meta:demo:") <= 1800
+
+
+def test_after_six_hours_pypi_is_asked_again_and_the_cache_starts_a_new_hour(layered):
+    layered.get("demo")
+    _age(layered, hours=6.1)
+    assert layered.get("demo").state == "fresh" and len(layered.fake.calls) == 2  # a conditional request, answered 304
+    assert layered._kv.ttl_of("meta:demo:") == 3600
+
+
+def test_not_on_pypi_is_cached_for_the_shorter_of_the_two_limits(layered, monkeypatch):
+    layered.fake.docs.clear()
+    layered.get("demo")
+    assert layered._kv.ttl_of("meta:demo:") == 3600
+    monkeypatch.setenv("PYPIHUB_META_MISSING_TTL", "120")
+    short = MetaService(layered._session, RecordingCache(), layered.fake)
+    short._kv = RecordingCache()
+    short.get("demo")  # a fresh "missing" row is already stored: 120 s is its limit, so that is all the cache may keep
+    assert short._kv.ttl_of("meta:demo:") <= 120
+
+
+def test_a_cache_ttl_longer_than_the_database_ttl_is_clamped(engine, monkeypatch, caplog):
+    monkeypatch.setenv("PYPIHUB_META_TTL", "600")
+    monkeypatch.setenv("PYPIHUB_META_CACHE_TTL", "99999")
+    with caplog.at_level("WARNING"):
+        svc = MetaService(database.session_factory(engine), MemoryCache(), FakeUpstream())
+    assert svc._cache_ttl == 600 and "PYPIHUB_META_CACHE_TTL" in caplog.text
+
+
+def test_a_negative_cache_ttl_falls_back_to_the_default(engine, monkeypatch):
+    monkeypatch.setenv("PYPIHUB_META_CACHE_TTL", "-1")
+    assert MetaService(database.session_factory(engine), MemoryCache(), FakeUpstream())._cache_ttl == 3600
+
+
+def test_a_zero_cache_ttl_means_the_database_serves_every_view(layered, monkeypatch):
+    monkeypatch.setenv("PYPIHUB_META_CACHE_TTL", "0")
+    off = MetaService(layered._session, MemoryCache(), layered.fake)
+    off._kv = RecordingCache()
+    off.get("demo")
+    off.get("demo")
+    assert off._kv.sets == [] and len(layered.fake.calls) == 1
+
+
+def test_the_switch_is_understood_as_text_and_as_the_typed_values_envdot_returns(layered, monkeypatch):
+    import os
+
+    real = os.getenv
+    typed = {"PYPIHUB_META": 0}
+    monkeypatch.setattr(os, "getenv", lambda name, default=None: typed.get(name, real(name, default)))
+    assert MetaService(layered._session, MemoryCache(), layered.fake).get("demo").state == "disabled"
+    typed["PYPIHUB_META"] = False
+    assert MetaService(layered._session, MemoryCache(), layered.fake).get("demo").state == "disabled"
+    typed["PYPIHUB_META"] = True
+    assert MetaService(layered._session, MemoryCache(), layered.fake).get("demo").state == "fresh"

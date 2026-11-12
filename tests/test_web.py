@@ -7,6 +7,7 @@ import time
 from io import BytesIO
 
 import pytest
+import requests
 
 from pypihub import web
 from pypihub.upstream import UpstreamError, UpstreamFile
@@ -856,3 +857,106 @@ def test_a_second_visit_is_served_from_the_cache(client, add_file, pypi):
     for _ in range(5):
         page(client)
     assert len(pypi.calls) == count
+
+
+# --------------------------------------------------------------------------
+# Package page: download statistics
+# --------------------------------------------------------------------------
+
+from test_stats import BASE as STATS_BASE, FakeHttp as StatsHttp, FakeResponse as StatsResponse  # noqa: E402
+from test_stats import overall_doc, recent_doc  # noqa: E402
+
+
+@pytest.fixture
+def stats_http(server, monkeypatch):
+    http = StatsHttp()
+    http.routes[f"{STATS_BASE}/packages/demo-pkg/recent"] = StatsResponse(body=recent_doc(1234, 56789, 1234567))
+    http.routes[f"{STATS_BASE}/packages/demo-pkg/overall"] = StatsResponse(body=overall_doc())
+    stats = server.module.STATS
+    monkeypatch.setattr(stats, "_http", http)
+    monkeypatch.setattr(stats, "_base", STATS_BASE)
+    monkeypatch.setattr(stats, "_on", True)
+    monkeypatch.setattr(stats, "_kv", MemoryCache())
+    return http
+
+
+def test_the_package_page_shows_download_counts_for_a_project_pypi_knows(client, add_file, pypi, stats_http):
+    add_file("local", "demo_pkg", "demo_pkg-1.0-py3-none-any.whl")
+    body = page(client)
+    assert 'id="downloads"' in body and "Last day" in body and "Last week" in body and "Last month" in body
+    assert ">1.2k<" in body and ">56.8k<" in body and ">1.2M<" in body and 'title="1,234,567"' in body
+    assert '<svg class="spark"' in body and '<polyline points="' in body and "Downloads per day, last 30 days" in body
+    assert "not downloads from this server" in body and 'href="https://pypistats.org/packages/demo-pkg"' in body
+    assert [call[0].rsplit("/", 1)[-1] for call in stats_http.calls] == ["recent", "overall"]
+
+
+def test_a_second_visit_does_not_ask_pypistats_again(client, add_file, pypi, stats_http):
+    add_file("local", "demo_pkg", "demo_pkg-1.0-py3-none-any.whl")
+    page(client)
+    page(client)
+    assert len(stats_http.calls) == 2
+
+
+def test_a_release_page_shows_the_same_project_statistics(client, add_file, pypi, stats_http):
+    add_file("local", "demo_pkg", "demo_pkg-1.0-py3-none-any.whl")
+    assert ">1.2M<" in page(client, "/project/demo-pkg/2.0/")
+
+
+def test_projects_pypi_does_not_know_get_no_statistics_and_no_request(client, add_file, pypi, stats_http):
+    pypi.docs.clear()  # a private package: PyPI answers 404
+    add_file("local", "demo_pkg", "demo_pkg-1.0-py3-none-any.whl")
+    body = page(client)
+    assert 'id="downloads"' not in body and stats_http.calls == []
+
+
+def test_with_the_details_feature_off_no_statistics_are_requested(client, server, add_file, stats_http, monkeypatch):
+    monkeypatch.setattr(server.module.META, "_on", False)
+    add_file("local", "demo_pkg", "demo_pkg-1.0-py3-none-any.whl")
+    assert 'id="downloads"' not in page(client) and stats_http.calls == []
+
+
+def test_the_statistics_can_be_switched_off(client, server, add_file, pypi, stats_http, monkeypatch):
+    monkeypatch.setattr(server.module.STATS, "_on", False)
+    add_file("local", "demo_pkg", "demo_pkg-1.0-py3-none-any.whl")
+    body = page(client)
+    assert 'id="downloads"' not in body and stats_http.calls == [] and "Project description" in body
+
+
+def test_when_pypistats_is_down_the_page_is_complete_without_the_block(client, add_file, pypi, stats_http):
+    stats_http.routes.clear()
+    stats_http.routes[f"{STATS_BASE}/packages/demo-pkg/recent"] = requests.ConnectionError("down")
+    add_file("local", "demo_pkg", "demo_pkg-1.0-py3-none-any.whl")
+    body = page(client)
+    assert 'id="downloads"' not in body and "Project description" in body and "demo_pkg-1.0-py3-none-any.whl" in body
+
+
+def test_an_old_copy_is_shown_with_a_note_when_pypistats_cannot_be_reached(client, server, add_file, pypi, stats_http):
+    from datetime import timedelta
+
+    from pypihub.database import PypiStats, utcnow
+
+    add_file("local", "demo_pkg", "demo_pkg-1.0-py3-none-any.whl")
+    page(client)
+    server.module.STATS._kv = MemoryCache()
+    with server.module.SessionLocal() as db:
+        db.query(PypiStats).update({"fetched_at": utcnow() - timedelta(hours=7)})
+        db.commit()
+    stats_http.routes[f"{STATS_BASE}/packages/demo-pkg/recent"] = requests.ConnectionError("down")
+    body = page(client)
+    assert ">1.2M<" in body and "pypistats.org could not be reached just now" in body
+
+
+def test_the_statistics_block_adds_no_inline_script_or_style(client, add_file, pypi, stats_http):
+    add_file("local", "demo_pkg", "demo_pkg-1.0-py3-none-any.whl")
+    body = page(client)
+    assert 'id="downloads"' in body and " style=" not in body and " onclick=" not in body
+    assert "<script>" not in body.replace("<script src=", "")
+
+
+@pytest.mark.parametrize("number, text", [
+    (0, "0"), (7, "7"), (999, "999"), (1000, "1k"), (1234, "1.2k"), (12345, "12.3k"), (100000, "100k"),
+    (999949, "999.9k"), (999950, "1M"), (1234567, "1.2M"), (56789012, "56.8M"), (2500000000, "2.5B"),
+    (3_100_000_000_000, "3.1T"), (10**15, "1000T"),
+])
+def test_compact_numbers(number, text):
+    assert web.compact_number(number) == text

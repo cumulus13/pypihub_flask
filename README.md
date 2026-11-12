@@ -327,8 +327,14 @@ Every setting can be an environment variable.
 | `REDIS_URL` | none | Shared cache and rate-limit counters. Without it each worker has its own |
 | `SECRET_KEY` | random per process | Signs sign-in cookies. Set it when running more than one worker (the Docker image keeps one in the volume) |
 | `PYPI_SIMPLE_URL` | `https://pypi.org/simple` | Upstream index. The JSON API for package pages is derived from it, or set `PYPI_JSON_URL` |
-| `PYPIHUB_META`, `PYPIHUB_META_TTL` | on, 21600 | Package page details from PyPI: switch, and seconds before a refresh |
+| `PYPIHUB_META`, `PYPIHUB_META_TTL` | on, 21600 | Package page details from PyPI: switch, and seconds a **database** copy is fresh before PyPI is asked again |
+| `PYPIHUB_META_CACHE_TTL` | 3600 | Seconds a copy stays in the **cache** (Redis). At most `PYPIHUB_META_TTL`; `0` keeps nothing in the cache |
 | `PYPIHUB_META_MISSING_TTL` | 3600 | Seconds "PyPI does not know this package" is remembered |
+| `PYPIHUB_STATS` | on | Download counts on package pages (from pypistats.org). `0` switches them off |
+| `PYPIHUB_STATS_URL` | `https://pypistats.org/api` for pypi.org, none for another upstream | Base URL of the statistics API. A mirror of PyPI has no statistics, so there are none unless you set this |
+| `PYPIHUB_STATS_TTL`, `PYPIHUB_STATS_CACHE_TTL` | 21600, 3600 | Seconds a statistics copy is fresh in the database, and how long it stays in the cache (at most the first) |
+| `PYPIHUB_STATS_MISSING_TTL` | 3600 | Seconds "pypistats.org does not know this package" is remembered |
+| `PYPIHUB_STATS_TIMEOUT`, `PYPIHUB_STATS_BACKOFF` | `2,5`, 60 | Connect and read timeout towards pypistats.org, and the pause after a failure or a `429` (`Retry-After` is honoured, at most 600 s) |
 | `PYPIHUB_UPSTREAM_TTL` | 300 | Seconds a project's file list is reused before it is re-checked |
 | `PYPIHUB_UPSTREAM_STALE_TTL` | 86400 | Seconds an older file list may still be used while PyPI is failing |
 | `PYPIHUB_UPSTREAM_TIMEOUT` | `3.05,20` | Connect and read timeout towards PyPI, in seconds |
@@ -348,7 +354,9 @@ Every setting can be an environment variable.
 | Accounts | database | until changed |
 | One row per stored file (name, version, size, SHA-256, source, date) | database | until the file is deleted, `reindex` or `prune`. Written when a file is uploaded or cached |
 | Package counters on the home page | cache | 10 seconds, and dropped at once when a file is added |
-| **Package details copied from PyPI** (README, links, classifiers, dependencies, release history) | **database** (durable) **and cache** (hot copy) | Fresh for `PYPIHUB_META_TTL` (6 h). Then re-checked with the ETag (see below). If PyPI cannot be reached the database copy is shown with a note, with no time limit. "Not on PyPI" is remembered for 1 h |
+| **Package details copied from PyPI** (README, links, classifiers, dependencies, release history) | **database** (durable) **and cache** (hot copy) | Database: fresh for `PYPIHUB_META_TTL` (6 h), then re-checked with the ETag (see below). Cache: `PYPIHUB_META_CACHE_TTL` (1 h), see "Two lifetimes" below. If PyPI cannot be reached the database copy is shown with a note, with no time limit. "Not on PyPI" is remembered for 1 h |
+| **Download counts** (last day, week, month and a 30 day chart) | **database** (table `pypi_stats`) **and cache** | Database: 6 h (`PYPIHUB_STATS_TTL`). Cache: 1 h (`PYPIHUB_STATS_CACHE_TTL`). Shown only for projects PyPI knows. If pypistats.org fails the database copy is shown with a note |
+| "pypistats.org failed or throttled us" flag | cache | 60 s, or the `Retry-After` it sent (`PYPIHUB_STATS_BACKOFF`) |
 | PyPI's file list for a project (for `/simple/`) | cache only | Fresh for 5 min (`PYPIHUB_UPSTREAM_TTL`), then re-checked with the ETag. The last copy is kept 24 h to use while PyPI fails. "Not found" 60 s |
 | "PyPI failed a moment ago" flag | cache | 15 s (`PYPIHUB_UPSTREAM_BACKOFF`) |
 | Rate-limit counters | cache | the window of each limit |
@@ -357,6 +365,22 @@ Every setting can be an environment variable.
 "Cache" is **Redis when `REDIS_URL` is set**. Otherwise it is a small in-memory cache inside each worker process:
 it is lost on restart and not shared between workers. Nothing important lives only there, because details are also in
 the database, so a restart does not send the server back to PyPI for packages it already knows.
+
+**Two lifetimes: the cache is shorter than the database.** Package details and download counts are kept in two
+places with two lifetimes. The database copy is the durable one and is fresh for 6 hours. The cache (Redis) holds a hot
+copy for only 1 hour. When a cache entry expires, the next view reads the database, which is still fresh, and puts the
+copy back in the cache for another hour: PyPI and pypistats.org are **not** asked. They are asked only when the
+database copy itself is older than 6 hours. A cache entry never outlives the database copy it holds: a copy with 30
+minutes of freshness left is cached for 30 minutes, not 1 hour. Set the two limits with `PYPIHUB_META_TTL` and
+`PYPIHUB_META_CACHE_TTL` (and `PYPIHUB_STATS_TTL` and `PYPIHUB_STATS_CACHE_TTL`); a cache limit above the database limit is
+lowered to it, with a warning in the log.
+
+**Download counts.** pypi.org no longer includes download counts in its JSON API, so PyPihub copies them from
+[pypistats.org](https://pypistats.org), which limits requests per client address (about 5 per second and 30 per minute
+at the time of writing). That is another reason to answer from the cache and the database. The numbers on a package page
+are PyPI's, for all versions: they are not downloads from your server. They are looked up only for projects PyPI knows,
+never for private uploads. The page shows them under **Downloads** in the sidebar, with a 30 day chart drawn on the
+server (no script). A new table, `pypi_stats`, is created on the next start; nothing needs migrating.
 
 **How a change on PyPI is noticed.** PyPI has no push notification, so PyPihub asks, cheaply. Every document is stored
 with the `ETag` PyPI sent. When a copy expires the request carries `If-None-Match`; if nothing changed PyPI answers

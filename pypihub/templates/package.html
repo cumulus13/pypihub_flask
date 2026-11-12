@@ -82,6 +82,23 @@
       <ul class="chips" aria-label="Keywords">{% for word in meta.keywords %}<li class="chip">{{ word }}</li>{% endfor %}</ul>
       {% endif %}
     </div>
+    {% if stats %}
+    <div class="side-block" id="downloads">
+      <h2 class="side-block__title">Downloads</h2>
+      <dl class="side-meta side-stats">
+        <dt>Last day</dt><dd title="{{ stats.last_day|thousands }}">{{ stats.last_day|compact }}</dd>
+        <dt>Last week</dt><dd title="{{ stats.last_week|thousands }}">{{ stats.last_week|compact }}</dd>
+        <dt>Last month</dt><dd title="{{ stats.last_month|thousands }}">{{ stats.last_month|compact }}</dd>
+      </dl>
+      {% if stats_chart %}
+      <svg class="spark" viewBox="0 0 180 40" role="img" aria-label="Downloads per day, last {{ stats_days }} days with data" preserveAspectRatio="none"><polyline points="{{ stats_chart }}"/></svg>
+      {% endif %}
+      <p class="side-stats__note">
+        All versions of {{ display_name }} on pypi.org, counted by <a href="https://pypistats.org/packages/{{ pkg.key }}" rel="nofollow noopener noreferrer" target="_blank">pypistats.org</a>. These are not downloads from this server.
+        {% if stats_state == 'stale' and stats_fetched_at %}Copied on {{ stats_fetched_at|utc_text }}; pypistats.org could not be reached just now.{% endif %}
+      </p>
+    </div>
+    {% endif %}
     {% if meta.classifiers %}
     <details class="side-block side-block--details">
       <summary class="side-block__title">Classifiers</summary>

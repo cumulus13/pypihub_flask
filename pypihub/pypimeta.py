@@ -20,7 +20,13 @@ reduced and rendered again only when it really changed. If the check fails, the 
 instead of an error. Only projects that PyPihub stores are ever looked up, so strangers
 cannot make the database grow by asking for random names.
 
-    PYPIHUB_META_TTL           seconds a copy is considered fresh (default 21600)
+The hot cache (Redis, or the small in-process one) holds a copy for less time than the database does
+(``PYPIHUB_META_CACHE_TTL``, default 1 hour). When a cache entry expires the next view reads the database, which is
+still fresh for hours, and refills the cache: PyPI is not asked. The cache never outlives the freshness of the copy
+it holds, so it cannot serve something the database would already have re-checked.
+
+    PYPIHUB_META_TTL           seconds a database copy is considered fresh (default 21600)
+    PYPIHUB_META_CACHE_TTL     seconds a copy stays in the cache, at most PYPIHUB_META_TTL (default 3600, 0 = no cache)
     PYPIHUB_META_MISSING_TTL   seconds "the upstream does not know this project" is remembered (default 3600)
     PYPIHUB_META=0             switch the feature off
 """
@@ -257,6 +263,22 @@ def _float_env(name: str, default: float) -> float:
         return default
 
 
+def _flag_env(name: str, default: bool = True) -> bool:
+    """``0``, ``false``, ``no`` and ``off`` switch a feature off.
+
+    ``os.getenv`` returns text in a plain environment, but the app loads ``envdot``, which makes it return typed
+    values (``0`` as an int, ``false`` as a bool). Both are understood. A non-empty string such as ``"0"`` is truthy
+    in Python, so testing the raw text would leave the feature switched on.
+    """
+    raw = os.getenv(name)
+    if raw is None:
+        return default
+    if isinstance(raw, str):
+        text = raw.strip().lower()
+        return default if not text else text not in ("0", "false", "no", "off")
+    return bool(raw)
+
+
 class MetaService:
     def __init__(self, session_factory, kv, upstream) -> None:
         self._session = session_factory
@@ -265,8 +287,21 @@ class MetaService:
         self._upstream = upstream
         self._ttl = _float_env("PYPIHUB_META_TTL", 21600)
         self._missing_ttl = _float_env("PYPIHUB_META_MISSING_TTL", 3600)
+        self._cache_ttl = self._cache_seconds(self._ttl)
         self._locks = [threading.Lock() for _ in range(64)]
-        self._on = os.getenv("PYPIHUB_META", "1")
+        self._on = _flag_env("PYPIHUB_META")
+
+    @staticmethod
+    def _cache_seconds(database_ttl: float) -> float:
+        """How long the hot cache may keep a copy: ``PYPIHUB_META_CACHE_TTL``, never more than the database's TTL."""
+        wanted = _float_env("PYPIHUB_META_CACHE_TTL", 3600)
+        if wanted < 0:
+            log.warning("PYPIHUB_META_CACHE_TTL must not be negative; using 3600")
+            wanted = 3600
+        if wanted > database_ttl:
+            log.warning("PYPIHUB_META_CACHE_TTL (%.0f s) is longer than PYPIHUB_META_TTL (%.0f s); using %.0f s",
+                        wanted, database_ttl, database_ttl)
+        return min(wanted, max(database_ttl, 0.0))
 
     @property
     def enabled(self) -> bool:
@@ -388,5 +423,8 @@ class MetaService:
             log.error("Could not update the stored details for %s: %s", key, exc)
 
     def _remember(self, kv_key: str, result: MetaResult, ttl: float) -> None:
-        if ttl > 0:
-            self._kv.set(kv_key, result.dump(), min(ttl, self._ttl))
+        """Put a result in the hot cache for ``ttl`` seconds: the time it is still fresh in the database, but never
+        longer than the cache's own, shorter limit."""
+        keep = min(ttl, self._cache_ttl)
+        if keep > 0:
+            self._kv.set(kv_key, result.dump(), keep)

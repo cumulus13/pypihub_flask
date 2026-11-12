@@ -41,10 +41,12 @@ from werkzeug.exceptions import NotFound
 try:
     from .catalog import SORTS, SOURCES
     from .dist import project_key, valid_filename, valid_project_name
+    from .pkgstats import sparkline
     from .pypimeta import VERSION_RE, group_classifiers, split_requirements
 except ImportError:  # run as a script from inside the package directory
     from catalog import SORTS, SOURCES  # type: ignore
     from dist import project_key, valid_filename, valid_project_name  # type: ignore
+    from pkgstats import sparkline  # type: ignore
     from pypimeta import VERSION_RE, group_classifiers, split_requirements  # type: ignore
 
 REPO_URL = "https://github.com/cumulus13/pypihub_flask"
@@ -155,6 +157,29 @@ def _server_urls() -> Dict[str, object]:
 @bp.app_template_filter("filesize")
 def _filesize_filter(value: int) -> str:
     return human_size(int(value))
+
+
+def compact_number(value: int) -> str:
+    """``1234`` -> ``1.2k``, ``56789012`` -> ``56.8M``: counts as pypi.org writes them next to a project."""
+    number = int(value)
+    if abs(number) < 1000:
+        return str(number)
+    scaled = float(number)
+    for unit in ("k", "M", "B", "T"):
+        scaled /= 1000.0
+        if abs(scaled) < 999.95 or unit == "T":
+            return f"{scaled:.1f}".rstrip("0").rstrip(".") + unit
+    return str(number)  # pragma: no cover
+
+
+@bp.app_template_filter("compact")
+def _compact_filter(value: int) -> str:
+    return compact_number(value)
+
+
+@bp.app_template_filter("thousands")
+def _thousands_filter(value: int) -> str:
+    return f"{int(value):,}"
 
 
 @bp.app_template_filter("ago")
@@ -381,6 +406,15 @@ def _project_page(name: str, version: Optional[str]):
             raise NotFound(f"Details for {detail.name} {version} are not available right now.")
     meta = result.data if result else None
 
+    # Download counts are PyPI's, so they are only looked up for projects PyPI knows (not for private uploads), which
+    # also keeps the requests to pypistats.org, which limits them, down to what is needed.
+    stats_service = current_app.extensions.get("pypihub_stats")
+    stats_result = None
+    if stats_service is not None and project_result is not None and project_result.state in ("fresh", "stale"):
+        stats_result = stats_service.get(key)
+    stats = stats_result.data if stats_result and stats_result.data else None
+    daily = (stats or {}).get("daily") or []
+
     stored = _version_set(detail)
     latest = (project_data or {}).get("version")
     releases = [dict(r, stored=_is_stored(r["version"], stored), latest=r["version"] == latest)
@@ -404,6 +438,11 @@ def _project_page(name: str, version: Optional[str]):
         meta=meta,
         state=result.state if result else "disabled",
         fetched_at=result.fetched_at if result else None,
+        stats=stats,
+        stats_state=stats_result.state if stats_result else "disabled",
+        stats_fetched_at=stats_result.fetched_at if stats_result else None,
+        stats_days=len(daily),
+        stats_chart=sparkline(daily),
         display_name=display_name,
         shown_version=shown_version,
         install_target=f"{display_name}=={version}" if version else display_name,
@@ -463,9 +502,10 @@ def _not_found(error):
     )
 
 
-def init_app(app: Flask, catalog, kv_cache=None, meta=None) -> None:
+def init_app(app: Flask, catalog, kv_cache=None, meta=None, stats=None) -> None:
     """Register the web interface. ``LOCAL_PKG_DIR`` and ``CACHE_DIR`` must be in ``app.config``."""
     app.extensions["pypihub_catalog"] = catalog
     app.extensions["pypihub_cache"] = kv_cache
     app.extensions["pypihub_meta"] = meta
+    app.extensions["pypihub_stats"] = stats
     app.register_blueprint(bp)

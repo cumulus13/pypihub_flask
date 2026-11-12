@@ -128,6 +128,25 @@ class PypiMeta(Base):
     __table_args__ = (UniqueConstraint("project_key", "version", name="uq_pypi_meta_release"),)
 
 
+class PypiStats(Base):
+    """Download counts for a project, copied from pypistats.org (see ``pkgstats.py``).
+
+    One row per project. ``data`` is a small JSON document (day, week and month totals and a daily series), so a
+    plain TEXT column is enough on every database. The table is created by ``init_db`` on the next start; nothing
+    needs migrating.
+    """
+
+    __tablename__ = "pypi_stats"
+
+    id = Column(BigInteger().with_variant(Integer, "sqlite"), primary_key=True, autoincrement=True)
+    project_key = Column(String(128), nullable=False)
+    status = Column(String(8), nullable=False, default="ok")  # 'ok' or 'missing' (pypistats.org does not know it)
+    data = Column(Text, nullable=True)
+    fetched_at = Column(DateTime, nullable=False, default=utcnow)
+
+    __table_args__ = (UniqueConstraint("project_key", name="uq_pypi_stats_project"),)
+
+
 # ---------------------------------------------------------------------------
 # Engine
 # ---------------------------------------------------------------------------

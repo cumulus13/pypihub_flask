@@ -27,6 +27,12 @@ services:
       # `docker compose exec pypihub pypihub prune --max-size 80GB` (daily, from cron) removes the oldest files.
       PYPIHUB_CACHE_MAX_SIZE: "${PYPIHUB_CACHE_MAX_SIZE:-100GB}"
       PYPIHUB_RATE_LIMIT_DEFAULT: "${PYPIHUB_RATE_LIMIT_DEFAULT:-1200 per minute}"
+      # Package page details and download counts: database fresh for 6 h, Redis keeps a hot copy for 1 h.
+      PYPIHUB_META_TTL: "${PYPIHUB_META_TTL:-21600}"
+      PYPIHUB_META_CACHE_TTL: "${PYPIHUB_META_CACHE_TTL:-3600}"
+      PYPIHUB_STATS: "${PYPIHUB_STATS:-1}"
+      PYPIHUB_STATS_TTL: "${PYPIHUB_STATS_TTL:-21600}"
+      PYPIHUB_STATS_CACHE_TTL: "${PYPIHUB_STATS_CACHE_TTL:-3600}"
       WEB_CONCURRENCY: "${WEB_CONCURRENCY:-4}"
       GUNICORN_THREADS: "${GUNICORN_THREADS:-8}"
       # 4 workers x (10 + 20) connections = 120 at most; PostgreSQL allows 100 by default and is raised below.

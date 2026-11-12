@@ -80,10 +80,12 @@ def _float_env(name: str, default: float) -> float:
 
 def _timeout() -> Tuple[float, float]:
     raw = os.getenv("PYPIHUB_UPSTREAM_TIMEOUT", "3.05,20")
+    # A plain environment gives the text "3.05,20"; with envdot loaded (as in the app) it is already a list.
+    parts = list(raw) if isinstance(raw, (list, tuple)) else str(raw).split(",")
     try:
-        connect, read = (float(part) for part in raw)
+        connect, read = (float(part) for part in parts)
         return connect, read
-    except ValueError:
+    except (TypeError, ValueError):
         return 3.05, 20.0
 
 
